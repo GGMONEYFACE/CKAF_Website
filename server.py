@@ -218,10 +218,19 @@ def load_env_and_check_files():
         raise SystemExit("Protected pages would leak content. Refusing to start.")
     steps = (ROOT / "protected" / "one-steps.html").read_text(encoding="utf-8")
     low = strip_onesteps(steps, rank_level("white"))
-    if 'data-min-rank="5th"' in low or 'data-min-rank="1st"' in low or 'class="note"' in low:
+    if 'data-min-rank="white"' not in low or 'data-min-rank="9th"' in low or 'data-min-rank="6th"' in low or 'class="note"' in low:
         raise SystemExit("One-steps sections would leak to a lower belt. Refusing to start.")
+    purple = strip_onesteps(steps, rank_level("9th"))
+    if 'data-min-rank="9th"' not in purple or 'data-min-rank="6th"' in purple:
+        raise SystemExit("A purple belt would see the wrong one-steps. Refusing to start.")
+    blue = strip_onesteps(steps, rank_level("7th"))
+    if 'data-min-rank="6th"' in blue or 'class="note"' in blue:
+        raise SystemExit("A blue belt would see advanced one-steps. Refusing to start.")
+    green = strip_onesteps(steps, rank_level("6th"))
+    if 'data-min-rank="6th"' not in green or 'class="note"' not in green:
+        raise SystemExit("A green belt would not see advanced one-steps. Refusing to start.")
     high = strip_onesteps(steps, rank_level("black"))
-    if 'data-min-rank="1st"' not in high or 'class="note"' not in high:
+    if 'data-min-rank="6th"' not in high or 'class="note"' not in high:
         raise SystemExit("One-steps sections for a black belt were removed. Refusing to start.")
     account = (ROOT / "protected" / "account.html").read_text(encoding="utf-8")
 
@@ -369,7 +378,7 @@ def strip_onesteps(page, level):
         cursor = tag_end
     pieces.append(page[cursor:])
     result = "".join(pieces)
-    if level < rank_level("1st"):
+    if level < rank_level("6th"):
         result = NOTE_RE.sub("", result)
     return result
 
@@ -416,7 +425,7 @@ def onesteps_for(page, level):
     for rank_id, need in RANKS.items():
         if need > level and ('data-min-rank="%s"' % rank_id) in stripped:
             return None
-    if level < rank_level("1st") and 'class="note"' in stripped:
+    if level < rank_level("6th") and 'class="note"' in stripped:
         return None
     return stripped
 
