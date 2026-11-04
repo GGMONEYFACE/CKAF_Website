@@ -6,8 +6,11 @@ from vercel.proxy import PlainTextResponse, Proxy, Request, Response
 
 import server
 
-server.load_env_file()
-server.load_env_and_check_files()
+try:
+    server.load_env_file()
+    server.load_env_and_check_files()
+except (Exception, SystemExit) as error:
+    print("CKAF startup check failed:", type(error).__name__, error, flush=True)
 
 proxy = Proxy()
 
