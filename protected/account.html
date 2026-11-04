@@ -40,6 +40,25 @@
             <button type="submit" class="login-button">Save name</button>
         </form>
     </div>
+    <div class="login-container account-block">
+        <form id="password-form" class="login-form" method="post" action="/api/account/password">
+            <h3 class="form-heading">Change password</h3>
+            <div id="password-message" class="login-error" role="alert"></div>
+            <div class="form-group">
+                <label for="current-password">Current password:</label>
+                <input type="password" id="current-password" name="current" autocomplete="current-password" maxlength="72" required>
+            </div>
+            <div class="form-group">
+                <label for="new-password">New password:</label>
+                <input type="password" id="new-password" name="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+            </div>
+            <div class="form-group">
+                <label for="confirm-password">Confirm new password:</label>
+                <input type="password" id="confirm-password" name="confirm" autocomplete="new-password" minlength="8" maxlength="72" required>
+            </div>
+            <button type="submit" class="login-button">Change password</button>
+        </form>
+    </div>
     <div id="next-test"></div>
 </div>
 

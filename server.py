@@ -105,6 +105,8 @@ PUBLIC_HTML = {
     "verses.html",
     "login.html",
     "register.html",
+    "forgot.html",
+    "reset.html",
 }
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -239,6 +241,12 @@ def load_env_and_check_files():
     guest_page, guest_code = prepare_html("account.html", account, None)
     if guest_code != 403 or guest_page is None or "Testing Requirements" in guest_page:
         raise SystemExit("Account tests would be visible without signing in. Refusing to start.")
+    if "Change password" not in (white_page or "") or 'id="current-password"' not in (white_page or ""):
+        raise SystemExit("A signed-in member would not see the password form. Refusing to start.")
+    if guest_page and ("Change password" in guest_page or 'id="current-password"' in guest_page):
+        raise SystemExit("The password form would be visible without signing in. Refusing to start.")
+    if required_level("forgot.html") != 0 or required_level("reset.html") != 0:
+        raise SystemExit("Password reset pages would be hidden. Refusing to start.")
     check_form_window()
 
 
@@ -861,8 +869,19 @@ def clear_failures(ip):
 def login_failure_message(payload):
     text = json.dumps(payload).lower() if isinstance(payload, dict) else ""
     if "confirm" in text:
-        return "Confirm your email, then sign in."
+        return "This account is not ready to sign in. Ask an instructor."
     return "Invalid email or password."
+
+
+def site_origin(headers):
+    forwarded = headers.get("X-Forwarded-Host") or headers.get("Host") or ""
+    host = forwarded.split(",")[0].strip()
+    if not host or any(ch in host for ch in " /@\\"):
+        return ""
+    proto = (headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+    if proto not in ("http", "https"):
+        proto = "https" if cookies_are_secure(headers) else "http"
+    return proto + "://" + host
 
 
 def same_origin(headers):
@@ -1024,26 +1043,110 @@ def handle_register(headers, raw, ip):
         return json_result(503, {"message": "Registration is unavailable right now."})
     if not isinstance(payload, dict):
         return json_result(400, {"message": signup_message(status, payload)})
-    identities = payload.get("identities")
+    user = payload.get("user") if isinstance(payload.get("user"), dict) else payload
+    identities = user.get("identities") if isinstance(user, dict) else None
     if isinstance(identities, list) and not identities:
-        return json_result(200, {
-            "pending": True,
-            "message": "If that email is new, check your inbox for a confirmation link. Then sign in.",
-        })
-    access = payload.get("access_token")
-    refresh = payload.get("refresh_token")
-    if status == 200 and isinstance(access, str) and isinstance(refresh, str) and access and refresh:
+        return json_result(400, {"message": "That email is already registered. Sign in instead."})
+    created = status == 200 and isinstance(user, dict) and isinstance(user.get("id"), str) and user.get("id")
+    if created:
         clear_failures(ip)
-        user = user_from_token_payload(payload)
-        profile = with_id(fetch_profile(access, user), user["id"]) if user else None
-        cookies = session_cookies(headers, access, refresh, payload.get("expires_in") or 3600, False, profile)
-        return json_result(200, {"redirect": "index.html"}, cookies)
-    if status == 200 and (payload.get("id") or (isinstance(payload.get("user"), dict) and payload["user"].get("id"))):
-        return json_result(200, {
-            "pending": True,
-            "message": "Check your email for a confirmation link, then sign in.",
-        })
+        return json_result(200, {"redirect": "login.html"})
     return json_result(400, {"message": signup_message(status, payload)})
+
+
+def recovery_token(value):
+    if not isinstance(value, str) or value.count(".") != 2 or len(value) > 8192:
+        return ""
+    parts = value.split(".")
+    if any(not part or len(part) > 4096 for part in parts):
+        return ""
+    payload = jwt_payload_unverified(value)
+    methods = []
+    amr = payload.get("amr") if isinstance(payload, dict) else None
+    if isinstance(amr, list):
+        for entry in amr:
+            method = entry.get("method") if isinstance(entry, dict) else entry
+            if isinstance(method, str):
+                methods.append(method)
+    if "otp" not in methods and "recovery" not in methods:
+        return ""
+    return value
+
+
+def forgot_message():
+    return "If that email belongs to a member, a reset link is on its way."
+
+
+def handle_forgot(headers, raw, ip):
+    wait = attempt_wait(ip)
+    if wait > 0:
+        return json_result(429, {"message": "Too many attempts. Try again in " + str(wait) + " seconds."})
+    data = read_json(raw, headers)
+    if data is None:
+        return json_result(400, {"message": "Enter the email for your member account."})
+    email = data.get("email")
+    if not isinstance(email, str):
+        return json_result(400, {"message": "Enter the email for your member account."})
+    email = email.strip().lower()
+    if not EMAIL_RE.match(email) or len(email) > 254:
+        return json_result(400, {"message": "Enter the email for your member account."})
+    if not configured():
+        return json_result(503, {"message": "Password reset is unavailable right now."})
+    origin = site_origin(headers)
+    if not origin:
+        return json_result(503, {"message": "Password reset is unavailable right now."})
+    record_failure(ip)
+    status, payload = supabase_call(
+        "POST",
+        "/auth/v1/recover?redirect_to=" + urllib.parse.quote(origin + "/reset.html", safe=""),
+        {"email": email},
+    )
+    if status == 0:
+        return json_result(503, {"message": "Password reset is unavailable right now."})
+    if status in (200, 201):
+        return json_result(200, {"ok": True, "message": forgot_message()})
+    text = json.dumps(payload).lower() if isinstance(payload, dict) else ""
+    if "not found" in text or "user" in text:
+        return json_result(200, {"ok": True, "message": forgot_message()})
+    return json_result(503, {"message": "Password reset is unavailable right now."})
+
+
+def handle_reset(headers, raw, ip):
+    wait = attempt_wait(ip)
+    if wait > 0:
+        return json_result(429, {"message": "Too many attempts. Try again in " + str(wait) + " seconds."})
+    data = read_json(raw, headers)
+    if data is None:
+        return json_result(400, {"message": "Choose a new password."})
+    token = recovery_token(data.get("token"))
+    password = data.get("password")
+    confirm = data.get("confirm")
+    if not token:
+        return json_result(400, {"message": "This reset link has expired. Request a new one."})
+    if not isinstance(password, str) or not isinstance(confirm, str):
+        return json_result(400, {"message": "Choose a new password."})
+    if password != confirm:
+        return json_result(400, {"message": "Those passwords do not match."})
+    if len(password) < 8 or len(password) > 72:
+        return json_result(400, {"message": "Use a password of at least 8 characters."})
+    if not configured():
+        return json_result(503, {"message": "Password reset is unavailable right now."})
+    record_failure(ip)
+    status, payload = supabase_call(
+        "PUT",
+        "/auth/v1/user",
+        {"password": password},
+        token=token,
+    )
+    if status == 200:
+        clear_failures(ip)
+        return json_result(200, {"ok": True, "redirect": "login.html"})
+    if status in (401, 403):
+        return json_result(400, {"message": "This reset link has expired. Request a new one."})
+    detail = json.dumps(payload).lower() if isinstance(payload, dict) else ""
+    if "password" in detail:
+        return json_result(400, {"message": "Use a password of at least 8 characters."})
+    return json_result(503, {"message": "Password reset is unavailable right now."})
 
 
 def require_admin(headers):
@@ -1193,6 +1296,103 @@ def handle_account_name(headers, raw):
     return json_result(200, {"ok": True, "displayName": name}, cookies)
 
 
+def account_email(token):
+    status, payload = supabase_call("GET", "/auth/v1/user", token=token)
+    user = payload.get("user") if isinstance(payload, dict) and isinstance(payload.get("user"), dict) else payload
+    email = user.get("email") if isinstance(user, dict) else ""
+    if status != 200 or not isinstance(email, str):
+        return ""
+    return email.strip().lower()
+
+
+def handle_account_password(headers, raw, ip):
+    wait = attempt_wait(ip)
+    if wait > 0:
+        return json_result(429, {"message": "Too many attempts. Try again in " + str(wait) + " seconds."})
+    profile, cookies, token = authorize(headers.get("Cookie"), headers)
+    if not profile or not token:
+        return json_result(401, {"message": "Sign in."}, cookies)
+    data = read_json(raw, headers)
+    if data is None:
+        return json_result(400, {"message": "Enter your current password and a new password."}, cookies)
+    current = data.get("current")
+    password = data.get("password")
+    confirm = data.get("confirm")
+    if not isinstance(current, str) or not isinstance(password, str) or not isinstance(confirm, str):
+        return json_result(400, {"message": "Enter your current password and a new password."}, cookies)
+    if password != confirm:
+        return json_result(400, {"message": "Those passwords do not match."}, cookies)
+    if len(password) < 8 or len(password) > 72 or len(current) < 1 or len(current) > 72:
+        return json_result(400, {"message": "Use a password of at least 8 characters."}, cookies)
+    if current == password:
+        return json_result(400, {"message": "Choose a different password."}, cookies)
+    email = account_email(token)
+    if not email:
+        return json_result(503, {"message": "Password changes are unavailable right now."}, cookies)
+    status, payload = supabase_call(
+        "POST",
+        "/auth/v1/token?grant_type=password",
+        {"email": email, "password": current},
+    )
+    if status == 0:
+        return json_result(503, {"message": "Password changes are unavailable right now."}, cookies)
+    fresh = payload.get("access_token") if isinstance(payload, dict) else ""
+    fresh_refresh = payload.get("refresh_token") if isinstance(payload, dict) else ""
+    checked = user_from_token_payload(payload)
+    if status != 200 or not isinstance(fresh, str) or not fresh:
+        record_failure(ip)
+        return json_result(400, {"message": "That current password is not right."}, cookies)
+    if checked and isinstance(fresh_refresh, str) and fresh_refresh:
+        stored = parse_cookies(headers.get("Cookie"))
+        cookies = session_cookies(
+            headers,
+            fresh,
+            fresh_refresh,
+            payload.get("expires_in") or 3600,
+            stored.get(REMEMBER_COOKIE) == "1",
+            with_id(fetch_profile(fresh, checked), checked["id"]),
+        )
+    status, updated = supabase_call(
+        "PUT",
+        "/auth/v1/user",
+        {"password": password},
+        token=fresh,
+    )
+    if status != 200:
+        detail = ""
+        if isinstance(updated, dict):
+            detail = " ".join(
+                str(updated.get(key) or "")
+                for key in ("msg", "message", "error_description", "error")
+            ).lower()
+        if "password" in detail:
+            return json_result(400, {"message": "Use a password of at least 8 characters."}, cookies)
+        return json_result(403, {"message": "That password was not changed."}, cookies)
+    status, signed_in = supabase_call(
+        "POST",
+        "/auth/v1/token?grant_type=password",
+        {"email": email, "password": password},
+    )
+    user = user_from_token_payload(signed_in)
+    access = signed_in.get("access_token") if isinstance(signed_in, dict) else ""
+    refresh = signed_in.get("refresh_token") if isinstance(signed_in, dict) else ""
+    if status != 200 or not user or not isinstance(access, str) or not isinstance(refresh, str) or not access or not refresh:
+        clear_failures(ip)
+        return json_result(200, {"ok": True, "redirect": "login.html"}, auth_cookies("", "", 0, False, headers, clear=True))
+    clear_failures(ip)
+    member = with_id(fetch_profile(access, user), user["id"])
+    stored = parse_cookies(headers.get("Cookie"))
+    cookies = session_cookies(
+        headers,
+        access,
+        refresh,
+        signed_in.get("expires_in") or 3600,
+        stored.get(REMEMBER_COOKIE) == "1",
+        member,
+    )
+    return json_result(200, {"ok": True}, cookies)
+
+
 def handle_page(path, headers):
     found = static_file(path)
     if found is None:
@@ -1214,7 +1414,16 @@ def handle_page(path, headers):
 def handle_request(method, path, headers, body, ip):
     try:
         if method == "POST":
-            if path not in ("/api/login", "/api/logout", "/api/register", "/api/admin/rank", "/api/account/name"):
+            if path not in (
+                "/api/login",
+                "/api/logout",
+                "/api/register",
+                "/api/forgot",
+                "/api/reset",
+                "/api/admin/rank",
+                "/api/account/name",
+                "/api/account/password",
+            ):
                 return json_result(404, {"message": "Not found."})
             if not same_origin(headers):
                 return json_result(403, {"message": "That request was rejected."})
@@ -1222,10 +1431,16 @@ def handle_request(method, path, headers, body, ip):
                 return handle_login(headers, body, ip)
             if path == "/api/register":
                 return handle_register(headers, body, ip)
+            if path == "/api/forgot":
+                return handle_forgot(headers, body, ip)
+            if path == "/api/reset":
+                return handle_reset(headers, body, ip)
             if path == "/api/admin/rank":
                 return handle_admin_rank(headers, body)
             if path == "/api/account/name":
                 return handle_account_name(headers, body)
+            if path == "/api/account/password":
+                return handle_account_password(headers, body, ip)
             return handle_logout(headers)
         if method != "GET":
             return json_result(405, {"message": "Not found."})
@@ -1254,7 +1469,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
-        raw = read_body(self, 4096)
+        raw = read_body(self, 16384)
         status, content_type, body, cookies = handle_request(self.command, path, self.headers, raw, self.client_address[0])
         self.send_result(status, content_type, body, cookies)
 

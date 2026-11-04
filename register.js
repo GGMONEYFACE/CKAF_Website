@@ -46,12 +46,7 @@ registerForm.addEventListener("submit", async function (event) {
             submitButton.disabled = false;
             return;
         }
-        if (result.redirect) {
-            window.location.href = "index.html";
-            return;
-        }
-        showRegisterMessage(result.message || "Check your email for a confirmation link, then sign in.", true);
-        submitButton.disabled = false;
+        window.location.href = result.redirect || "login.html";
     } catch (error) {
         showRegisterMessage("Registration is unavailable. Reload the page and try again.");
         submitButton.disabled = false;

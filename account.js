@@ -64,6 +64,67 @@ if (form && typeof window.ckafReadSession === "function") {
     }
 }
 
+const passwordForm = document.getElementById("password-form");
+const passwordMessage = document.getElementById("password-message");
+
+function showPasswordMessage(message, ok) {
+    if (!passwordMessage) {
+        return;
+    }
+    passwordMessage.textContent = message;
+    passwordMessage.classList.toggle("success", Boolean(ok));
+    passwordMessage.classList.add("visible");
+}
+
+if (passwordForm) {
+    passwordForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const button = passwordForm.querySelector(".login-button");
+        const current = document.getElementById("current-password").value;
+        const password = document.getElementById("new-password").value;
+        const confirm = document.getElementById("confirm-password").value;
+        passwordMessage.classList.remove("visible", "success");
+        if (password !== confirm) {
+            showPasswordMessage("Those passwords do not match.");
+            return;
+        }
+        button.disabled = true;
+        try {
+            const response = await fetch("/api/account/password", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    current: current,
+                    password: password,
+                    confirm: confirm
+                })
+            });
+            let result = {};
+            try {
+                result = await response.json();
+            } catch (error) {
+                result = {};
+            }
+            if (!response.ok) {
+                showPasswordMessage(result.message || "That password was not changed.");
+                document.getElementById("current-password").value = "";
+                button.disabled = false;
+                return;
+            }
+            if (result.redirect) {
+                window.location.href = result.redirect;
+                return;
+            }
+            passwordForm.reset();
+            showPasswordMessage("Your password was changed.", true);
+        } catch (error) {
+            showPasswordMessage("Your member page is unavailable. Reload and try again.");
+        }
+        button.disabled = false;
+    });
+}
+
 if (form) {
     form.addEventListener("submit", async function (event) {
         event.preventDefault();

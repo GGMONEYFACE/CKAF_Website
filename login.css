@@ -23,6 +23,17 @@
     margin: 40px auto;
 }
 
+.account-block {
+    margin-top: 0;
+}
+
+.form-heading {
+    margin: 0 0 18px;
+    font-size: 1.35rem;
+    color: #333;
+    text-align: left;
+}
+
 .login-form {
     background: #f8f9fa;
     border: 1px solid #ddd;

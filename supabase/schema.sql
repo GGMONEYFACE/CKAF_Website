@@ -100,6 +100,34 @@ create trigger on_auth_user_created
     after insert on auth.users
     for each row execute function private.handle_new_user();
 
+-- Accounts can sign in as soon as they are created. No confirmation link.
+-- Also turn off Authentication → Sign In / Providers → Email → Confirm email
+-- in the Supabase dashboard so a confirmation message is not sent.
+create or replace function private.confirm_email_on_signup()
+returns trigger
+language plpgsql
+security definer
+set search_path = auth
+as $$
+begin
+    if new.email_confirmed_at is null then
+        new.email_confirmed_at = now();
+    end if;
+    return new;
+end;
+$$;
+
+revoke all on function private.confirm_email_on_signup() from public, anon, authenticated;
+
+drop trigger if exists confirm_email_on_signup on auth.users;
+create trigger confirm_email_on_signup
+    before insert on auth.users
+    for each row execute function private.confirm_email_on_signup();
+
+update auth.users
+set email_confirmed_at = now()
+where email_confirmed_at is null;
+
 create or replace function public.claim_instructor()
 returns boolean
 language plpgsql
