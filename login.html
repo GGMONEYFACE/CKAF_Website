@@ -3,6 +3,7 @@
 <head>
     <title>Christian Karate Academy Federation - Login</title>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'self'">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="images/IMG_0507.jpg" type="image/x-icon">
     <link rel="stylesheet" href="header.css">
@@ -31,30 +32,38 @@
     <p>Sign in to access your member account:</p>
     
     <div class="login-container">
-        <form class="login-form">
+        <form class="login-form" method="post" action="login.html">
+            <div id="login-error" class="login-error" role="alert"></div>
+
             <div class="form-group">
-                <label for="email">Email or Username:</label>
-                <input type="text" id="email" name="email" required>
+                <label for="email">Username:</label>
+                <input type="text" id="email" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40" required>
             </div>
             
             <div class="form-group">
                 <label for="password">Password:</label>
-                <input type="password" id="password" name="password" required>
+                <input type="password" id="password" name="password" autocomplete="current-password" maxlength="72" required>
             </div>
             
             <div class="form-group checkbox">
                 <input type="checkbox" id="remember" name="remember">
-                <label for="remember">Remember me</label>
+                <label for="remember">Remember me for 7 days</label>
             </div>
             
             <button type="submit" class="login-button">Sign In</button>
-            
-            <div class="login-links">
-                <a href="#">Forgot password?</a>
-                <span>•</span>
-                <a href="#">Create account</a>
-            </div>
         </form>
+
+        <div class="demo-accounts">
+            <h3>Demo accounts</h3>
+            <ul>
+                <li><strong>white</strong> / demo-white — White Belt</li>
+                <li><strong>gideon</strong> / demo-gideon — 5th Green</li>
+                <li><strong>david</strong> / demo-david — 1st Red</li>
+                <li><strong>instructor</strong> / demo-instructor — Black Belt</li>
+            </ul>
+            <p>Each account can open forms and testing pages up through its belt. Basic, intermediate, and advanced one-steps open at White, 5th Green, and 1st Red.</p>
+            <p>This demo signs the session in the browser. A production site would check the password on a server.</p>
+        </div>
     </div>
 </div>
 
