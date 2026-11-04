@@ -29,15 +29,15 @@
 
 <div class="content">
     <h2>Member Login</h2>
-    <p>Sign in to access your member account:</p>
+    <p>Sign in with the email and password for your member account.</p>
     
     <div class="login-container">
-        <form class="login-form" method="post" action="login.html">
+        <form class="login-form" method="post" action="/api/login">
             <div id="login-error" class="login-error" role="alert"></div>
 
             <div class="form-group">
-                <label for="email">Username:</label>
-                <input type="text" id="email" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="40" required>
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required>
             </div>
             
             <div class="form-group">
@@ -52,18 +52,6 @@
             
             <button type="submit" class="login-button">Sign In</button>
         </form>
-
-        <div class="demo-accounts">
-            <h3>Demo accounts</h3>
-            <ul>
-                <li><strong>white</strong> / demo-white — White Belt</li>
-                <li><strong>gideon</strong> / demo-gideon — 5th Green</li>
-                <li><strong>david</strong> / demo-david — 1st Red</li>
-                <li><strong>instructor</strong> / demo-instructor — Black Belt</li>
-            </ul>
-            <p>Each account can open forms and testing pages up through its belt. Basic, intermediate, and advanced one-steps open at White, 5th Green, and 1st Red.</p>
-            <p>This demo signs the session in the browser. A production site would check the password on a server.</p>
-        </div>
     </div>
 </div>
 

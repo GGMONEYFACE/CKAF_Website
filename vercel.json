@@ -1,0 +1,19 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "proxy": {
+    "entrypoint": "proxy:proxy",
+    "matcher": [
+      "/api/:path*",
+      "/Kata/:path*",
+      "/Testing/:path*",
+      "/one-steps.html",
+      "/protected/:path*"
+    ]
+  },
+  "functions": {
+    "proxy.py": {
+      "includeFiles": "protected/**",
+      "maxDuration": 15
+    }
+  }
+}
