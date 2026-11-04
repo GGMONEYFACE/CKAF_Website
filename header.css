@@ -14,33 +14,36 @@ body {
 header {
     position: relative;
     width: 100%;
-    height: 50vh;
-    background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), 
-                url('images/IMG_9138.jpg') center/cover no-repeat;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    padding-top: 48px;
+    background: #111;
     overflow: visible;
-    padding: 20px 0;
+}
+
+header::before {
+    content: "";
+    display: block;
+    width: 100%;
+    aspect-ratio: 948 / 283;
+    background: url('images/IMG_9138.jpg') center / cover no-repeat;
 }
 
 header h1 {
-    font-size: 5rem;
-    color: white;
-    text-align: center;
-    font-weight: bold;
-    text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);
-    letter-spacing: 2px;
-    animation: fadeInScale 1s ease-in-out;
-    margin-bottom: 30px;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 /* Greeting in top left */
 .greeting {
     position: absolute;
-    top: 20px;
-    left: 20px;
+    top: 10px;
+    left: 16px;
     color: white;
     font-size: 1.1rem;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
@@ -51,55 +54,77 @@ header h1 {
 /* Menu Button */
 #menu-button {
     position: absolute;
-    top: 20px;
-    right: 20px;
-    background: none;
+    top: 6px;
+    right: 8px;
+    width: 42px;
+    height: 36px;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.45);
     border: none;
+    border-radius: 6px;
     cursor: pointer;
     z-index: 1001;
 }
 
 #menu-button span {
-    display: block;
+    position: absolute;
+    left: 6px;
     width: 30px;
     height: 3px;
     background: white;
-    margin: 5px 0;
-    transition: 0.3s;
+    border-radius: 2px;
+    transition: transform 0.3s ease, opacity 0.2s ease;
 }
 
-#menu-button:hover span:nth-child(1) {
-    transform: rotate(45deg) translateY(5px);
+#menu-button span:nth-child(1) {
+    top: 8px;
 }
 
-#menu-button:hover span:nth-child(2) {
+#menu-button span:nth-child(2) {
+    top: 16.5px;
+}
+
+#menu-button span:nth-child(3) {
+    top: 25px;
+}
+
+#menu-button.open span:nth-child(1) {
+    transform: translateY(8.5px) rotate(45deg);
+}
+
+#menu-button.open span:nth-child(2) {
     opacity: 0;
 }
 
-#menu-button:hover span:nth-child(3) {
-    transform: rotate(-45deg) translateY(-5px);
+#menu-button.open span:nth-child(3) {
+    transform: translateY(-8.5px) rotate(-45deg);
 }
 
 /* Sliding Menu */
 .sliding-menu {
     position: fixed;
     top: 0;
-    right: -100%;
+    left: 0;
     width: 100%;
     height: 50px;
     background: rgba(0, 0, 0, 0.8);
-    transition: right 0.3s ease;
+    transform: translateX(100%);
+    transition: transform 0.35s ease;
     z-index: 1000;
-    padding: 10px;
+    padding: 0 56px 0 16px;
     font-family: monospace;
     font-size: 14px;
 }
 
 .sliding-menu.open {
-    right: 0;
+    transform: translateX(0);
 }
 
 .menu-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
     text-align: center;
     color: white;
 }
@@ -184,42 +209,21 @@ header h1 {
     color: #ccc;
 }
 
-@keyframes fadeInScale {
-    from {
-        opacity: 0;
-        transform: scale(0.9);
-    }
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
-}
-
-/* Responsive design */
 @media (max-width: 768px) {
-    header {
-        min-height: 400px;
+    .sliding-menu {
+        height: auto;
+        padding: 12px 56px 12px 12px;
     }
-    
-    header h1 {
-        font-size: 3rem;
-        margin-bottom: 20px;
-    }
-}
 
-@media (max-width: 480px) {
-    header {
-        min-height: 350px;
+    .menu-content {
+        height: auto;
     }
-    
-    header h1 {
-        font-size: 2rem;
-        margin-bottom: 15px;
-    }
-    
-    .header-nav a {
-        padding: 10px 15px;
-        font-size: 0.95rem;
+
+    .menu-line {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 4px 0;
     }
 }
 

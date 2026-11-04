@@ -4,8 +4,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const closeButton = document.querySelector(".close");
 
     if (menuButton && slidingMenu) {
+        menuButton.setAttribute("aria-label", "Menu");
+        menuButton.setAttribute("aria-expanded", "false");
         menuButton.addEventListener("click", function () {
-            slidingMenu.classList.toggle("open");
+            const open = slidingMenu.classList.toggle("open");
+            menuButton.classList.toggle("open", open);
+            menuButton.setAttribute("aria-expanded", open ? "true" : "false");
         });
     }
 
