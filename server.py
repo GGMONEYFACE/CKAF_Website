@@ -12,6 +12,7 @@ import html
 import json
 import os
 import re
+import secrets
 import sys
 import threading
 import time
@@ -107,6 +108,7 @@ PUBLIC_HTML = {
     "register.html",
     "forgot.html",
     "reset.html",
+    "suggestions.html",
 }
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -147,6 +149,10 @@ NOTE_RE = re.compile(r"\s*<p class=\"note\">[\s\S]*?</p>", re.IGNORECASE)
 
 ATTEMPT_LOCK = threading.Lock()
 ATTEMPTS = {}
+SUGGEST_LOCK = threading.Lock()
+SUGGESTIONS_SENT = {}
+SUGGEST_LIMIT = 5
+SUGGESTION_DIR = ROOT / "suggestions"
 PROFILE_WARNED = False
 
 
@@ -247,6 +253,13 @@ def load_env_and_check_files():
         raise SystemExit("The password form would be visible without signing in. Refusing to start.")
     if required_level("forgot.html") != 0 or required_level("reset.html") != 0:
         raise SystemExit("Password reset pages would be hidden. Refusing to start.")
+    if required_level("suggestions.html") != 0:
+        raise SystemExit("The suggestions page would be hidden. Refusing to start.")
+    if static_file("/suggestions/note.txt") is not None:
+        raise SystemExit("Suggestion notes would be public. Refusing to start.")
+    suggestions = (ROOT / "suggestions.html").read_text(encoding="utf-8")
+    if 'id="suggestion"' not in suggestions or "/api/suggestions" not in suggestions:
+        raise SystemExit("The suggestions page is missing its form. Refusing to start.")
     check_form_window()
 
 
@@ -866,6 +879,19 @@ def clear_failures(ip):
         ATTEMPTS.pop(ip, None)
 
 
+def suggestion_wait(ip, record):
+    now = time.time()
+    with SUGGEST_LOCK:
+        recent = [stamp for stamp in SUGGESTIONS_SENT.get(ip, []) if now - stamp < ATTEMPT_WINDOW]
+        if len(recent) >= SUGGEST_LIMIT:
+            SUGGESTIONS_SENT[ip] = recent
+            return int(ATTEMPT_WINDOW - (now - recent[0])) + 1
+        if record:
+            recent.append(now)
+        SUGGESTIONS_SENT[ip] = recent
+    return 0
+
+
 def login_failure_message(payload):
     text = json.dumps(payload).lower() if isinstance(payload, dict) else ""
     if "confirm" in text:
@@ -1393,6 +1419,114 @@ def handle_account_password(headers, raw, ip):
     return json_result(200, {"ok": True}, cookies)
 
 
+def clean_message(value):
+    if not isinstance(value, str):
+        return ""
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    kept = []
+    for ch in value:
+        if ch in "\n\t" or (" " <= ch and ch != "\x7f"):
+            kept.append(ch)
+    text = "".join(kept).strip()
+    while "\n\n\n" in text:
+        text = text.replace("\n\n\n", "\n\n")
+    return text[:2000]
+
+
+def save_suggestion_file(name, message):
+    folder = SUGGESTION_DIR
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    if not inside_root(folder):
+        return False
+    filename = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-" + secrets.token_hex(4) + ".txt"
+    path = folder / filename
+    if path.suffix != ".txt" or not inside_root(path):
+        return False
+    sent = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    body = "Name: %s\nSent: %s UTC\n\n%s\n" % (name or "A visitor", sent, message)
+    try:
+        path.write_text(body, encoding="utf-8")
+    except OSError:
+        return False
+    return True
+
+
+def store_suggestion(name, message, token):
+    saved_file = save_suggestion_file(name, message)
+    if not configured():
+        return saved_file
+    status, _payload = supabase_call(
+        "POST",
+        "/rest/v1/suggestions",
+        {"author_name": name, "message": message},
+        token=token or None,
+        extra_headers={"Prefer": "return=minimal"},
+    )
+    return status in (200, 201, 204)
+
+
+def suggestion_item(row):
+    if not isinstance(row, dict):
+        return None
+    message = row.get("message") if isinstance(row.get("message"), str) else ""
+    message = message.strip()[:2000]
+    if not message:
+        return None
+    name = row.get("author_name") if isinstance(row.get("author_name"), str) else ""
+    created = row.get("created_at") if isinstance(row.get("created_at"), str) else ""
+    item_id = row.get("id") if isinstance(row.get("id"), str) else ""
+    return {
+        "id": item_id,
+        "createdAt": created,
+        "name": name.strip()[:80] or "A visitor",
+        "message": message,
+    }
+
+
+def handle_suggestion(headers, raw, ip):
+    wait = suggestion_wait(ip, False)
+    if wait > 0:
+        return json_result(429, {"message": "Too many suggestions. Try again in " + str(wait) + " seconds."})
+    data = read_json(raw, headers)
+    if data is None:
+        return json_result(400, {"message": "That suggestion was not saved."})
+    decoy = data.get("company")
+    if isinstance(decoy, str) and decoy.strip():
+        suggestion_wait(ip, True)
+        return json_result(200, {"ok": True, "message": "Thanks. An instructor can read that suggestion."})
+    name = clean_name(data.get("name"))
+    message = clean_message(data.get("message"))
+    if not message:
+        return json_result(400, {"message": "Write a suggestion first."})
+    _session, cookies, token = authorize(headers.get("Cookie"), headers)
+    suggestion_wait(ip, True)
+    if store_suggestion(name, message, token):
+        return json_result(200, {"ok": True, "message": "Thanks. An instructor can read that suggestion."}, cookies)
+    return json_result(503, {"message": "Suggestions are unavailable right now."}, cookies)
+
+
+def handle_admin_suggestions(headers):
+    _profile, cookies, token = require_admin(headers)
+    if not token:
+        return json_result(403, {"message": "Instructors only."}, cookies)
+    status, payload = supabase_call(
+        "GET",
+        "/rest/v1/suggestions?select=id,created_at,author_name,message&order=created_at.desc&limit=200",
+        token=token,
+    )
+    if status != 200 or not isinstance(payload, list):
+        return json_result(503, {"message": "Suggestions are unavailable right now."}, cookies)
+    notes = []
+    for row in payload:
+        item = suggestion_item(row)
+        if item:
+            notes.append(item)
+    return json_result(200, {"suggestions": notes}, cookies)
+
+
 def handle_page(path, headers):
     found = static_file(path)
     if found is None:
@@ -1423,6 +1557,7 @@ def handle_request(method, path, headers, body, ip):
                 "/api/admin/rank",
                 "/api/account/name",
                 "/api/account/password",
+                "/api/suggestions",
             ):
                 return json_result(404, {"message": "Not found."})
             if not same_origin(headers):
@@ -1441,6 +1576,8 @@ def handle_request(method, path, headers, body, ip):
                 return handle_account_name(headers, body)
             if path == "/api/account/password":
                 return handle_account_password(headers, body, ip)
+            if path == "/api/suggestions":
+                return handle_suggestion(headers, body, ip)
             return handle_logout(headers)
         if method != "GET":
             return json_result(405, {"message": "Not found."})
@@ -1448,6 +1585,8 @@ def handle_request(method, path, headers, body, ip):
             return handle_me(headers)
         if path == "/api/admin/members":
             return handle_admin_members(headers)
+        if path == "/api/admin/suggestions":
+            return handle_admin_suggestions(headers)
         if path.startswith("/api/") or path == "/protected" or path.startswith("/protected/"):
             return json_result(404, {"message": "Not found."})
         return handle_page(path, headers)

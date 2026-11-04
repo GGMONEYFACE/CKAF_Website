@@ -127,6 +127,64 @@ async function loadMembers() {
     }
 }
 
+function formatWhen(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+        return "";
+    }
+    return date.toLocaleString();
+}
+
+function addSuggestion(note) {
+    const list = document.getElementById("suggestion-list");
+    const card = document.createElement("article");
+    card.className = "suggestion-card";
+    const heading = document.createElement("h3");
+    const when = formatWhen(note.createdAt);
+    heading.textContent = when ? (note.name || "A visitor") + " · " + when : (note.name || "A visitor");
+    const body = document.createElement("p");
+    body.textContent = note.message || "";
+    card.append(heading, body);
+    list.append(card);
+}
+
+async function loadSuggestions() {
+    const list = document.getElementById("suggestion-list");
+    if (!list) {
+        return;
+    }
+    try {
+        const response = await fetch("/api/admin/suggestions", { credentials: "same-origin" });
+        let result = {};
+        try {
+            result = await response.json();
+        } catch (error) {
+            result = {};
+        }
+        list.replaceChildren();
+        if (!response.ok) {
+            const notice = document.createElement("p");
+            notice.textContent = result.message || "Suggestions are unavailable right now.";
+            list.append(notice);
+            return;
+        }
+        const notes = Array.isArray(result.suggestions) ? result.suggestions : [];
+        if (!notes.length) {
+            const notice = document.createElement("p");
+            notice.textContent = "No suggestions yet.";
+            list.append(notice);
+            return;
+        }
+        notes.forEach(addSuggestion);
+    } catch (error) {
+        list.replaceChildren();
+        const notice = document.createElement("p");
+        notice.textContent = "Suggestions are unavailable right now.";
+        list.append(notice);
+    }
+}
+
 if (tableBody) {
     loadMembers();
+    loadSuggestions();
 }

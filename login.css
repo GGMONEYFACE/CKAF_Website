@@ -56,7 +56,8 @@
 
 .form-group input[type="email"],
 .form-group input[type="password"],
-.form-group input[type="text"] {
+.form-group input[type="text"],
+.form-group textarea {
     width: 100%;
     padding: 12px;
     border: 1px solid #ddd;
@@ -67,10 +68,25 @@
 
 .form-group input[type="email"]:focus,
 .form-group input[type="password"]:focus,
-.form-group input[type="text"]:focus {
+.form-group input[type="text"]:focus,
+.form-group textarea:focus {
     outline: none;
     border-color: #d9534f;
     box-shadow: 0 0 5px rgba(217, 83, 79, 0.5);
+}
+
+.form-group textarea {
+    min-height: 140px;
+    resize: vertical;
+    font-family: inherit;
+}
+
+.leave-blank {
+    position: absolute;
+    left: -10000px;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
 }
 
 .form-group.checkbox {

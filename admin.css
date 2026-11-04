@@ -52,3 +52,29 @@
     background: #d1e7dd;
     color: #0f5132;
 }
+
+.suggestion-list {
+    max-width: 900px;
+    margin: 28px auto 0;
+    text-align: left;
+}
+
+.suggestion-card {
+    background: #f8f9fa;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 16px 18px;
+    margin-bottom: 14px;
+}
+
+.suggestion-card h3 {
+    margin: 0 0 8px;
+    font-size: 1.05rem;
+    color: #333;
+}
+
+.suggestion-card p {
+    margin: 0;
+    white-space: pre-wrap;
+    text-align: left;
+}
