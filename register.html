@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Christian Karate Academy Federation - Register</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'self'">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="images/IMG_0507.jpg" type="image/x-icon">
+    <link rel="stylesheet" href="header.css">
+    <link rel="stylesheet" href="login.css">
+</head>
+<body>
+
+<header>
+    <div id="greeting" class="greeting"></div>
+    <h1>Register</h1>
+    <button id="menu-button">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
+</header>
+
+<div id="sliding-menu" class="sliding-menu">
+    <div class="menu-content">
+        <div class="menu-line"><a href="index.html">Home</a> <a href="locations.html">Locations</a> <a href="verses.html">Verses</a> <a href="one-steps.html">One-steps</a> <span class="kata-dropdown"><a href="#">Kata</a><div class="kata-submenu"><a href="Kata/giecho-il-bu.html">Giecho Hyung Il Bu (Basic Form 1)</a><a href="Kata/giecho-yi-bu.html">Giecho Hyung Yi Bu Sang Cup (Basic Form 2)</a><a href="Kata/giecho-sahm-bu.html">Giecho Hyung Sahm Bu (Basic Form 3)</a><a href="Kata/pyong-an-cho-dan.html">Pyong An Cho Dan</a><a href="Kata/pyong-an-yi-dan.html">Pyong An Yi Dan</a><a href="Kata/pyong-an-sahm-dan.html">Pyong An Sahm Dan</a><a href="Kata/pyong-an-sa-dan.html">Pyong An Sa Dan</a><a href="Kata/pyong-an-oh-dan.html">Pyong An Oh Dan</a><a href="Kata/nahanchi-sahm-dan.html">Nahanchi Sahm Dan</a><a href="Kata/empi.html">Empi</a><a href="Kata/bassai.html">Bassai</a></div></span> <span class="kata-dropdown"><a href="#">Testing</a><div class="kata-submenu"><a href="Testing/white-belts.html">White Belts</a><a href="Testing/10th-gold.html">10th Gold</a><a href="Testing/9th-purple.html">9th Purple</a><a href="Testing/8th-orange.html">8th Orange</a><a href="Testing/7th-blue.html">7th Blue</a><a href="Testing/6th-green.html">6th Green</a><a href="Testing/5th-green.html">5th Green</a><a href="Testing/4th-brown.html">4th Brown</a><a href="Testing/3rd-brown.html">3rd Brown</a><a href="Testing/2nd-red.html">2nd Red</a><a href="Testing/1st-red.html">1st Red</a></div></span> <a href="login.html">Login</a></div>
+    </div>
+</div>
+
+<div class="content">
+    <h2>Create an account</h2>
+    <p>New members start at white belt. An instructor sets the belt after you confirm your email.</p>
+
+    <div class="login-container">
+        <form class="login-form" method="post" action="/api/register">
+            <div id="login-error" class="login-error" role="alert"></div>
+
+            <div class="form-group">
+                <label for="name">Name:</label>
+                <input type="text" id="name" name="name" autocomplete="name" maxlength="80" required>
+            </div>
+
+            <div class="form-group">
+                <label for="email">Email:</label>
+                <input type="email" id="email" name="email" autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="254" required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password:</label>
+                <input type="password" id="password" name="password" autocomplete="new-password" minlength="8" maxlength="72" required>
+            </div>
+
+            <div class="form-group">
+                <label for="confirm">Confirm password:</label>
+                <input type="password" id="confirm" name="confirm" autocomplete="new-password" minlength="8" maxlength="72" required>
+            </div>
+
+            <button type="submit" class="login-button">Create account</button>
+        </form>
+        <p class="login-links"><a href="login.html">Already have an account? Sign in</a></p>
+    </div>
+</div>
+
+<script src="cookies.js"></script>
+<script src="menu.js"></script>
+<script src="register.js"></script>
+</body>
+</html>

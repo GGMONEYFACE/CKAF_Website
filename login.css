@@ -44,7 +44,8 @@
 }
 
 .form-group input[type="email"],
-.form-group input[type="password"] {
+.form-group input[type="password"],
+.form-group input[type="text"] {
     width: 100%;
     padding: 12px;
     border: 1px solid #ddd;
@@ -54,7 +55,8 @@
 }
 
 .form-group input[type="email"]:focus,
-.form-group input[type="password"]:focus {
+.form-group input[type="password"]:focus,
+.form-group input[type="text"]:focus {
     outline: none;
     border-color: #d9534f;
     box-shadow: 0 0 5px rgba(217, 83, 79, 0.5);
@@ -140,6 +142,11 @@
 
 .login-error.visible {
     display: block;
+}
+
+.login-error.success {
+    background: #d1e7dd;
+    color: #0f5132;
 }
 
 /* Responsive design */

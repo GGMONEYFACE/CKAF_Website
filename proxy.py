@@ -55,6 +55,11 @@ async def hidden(request: Request) -> Response:
     return PlainTextResponse("That page is not on this site.\n", status_code=404)
 
 
+@proxy.route("/admin.html")
+async def admin_page(request: Request) -> Response:
+    return await dispatch(request)
+
+
 @proxy.route("/one-steps.html")
 async def one_steps(request: Request) -> Response:
     return await dispatch(request)

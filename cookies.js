@@ -110,7 +110,8 @@ async function readSession() {
         }
         return {
             displayName: data.displayName,
-            rank: typeof data.rank === "string" ? data.rank : null
+            rank: typeof data.rank === "string" ? data.rank : null,
+            admin: data.isAdmin === true
         };
     } catch (error) {
         return null;
@@ -207,7 +208,38 @@ function ensureGreeting() {
     header.insertBefore(greeting, header.firstChild);
 }
 
+function accountPrefix(loginAnchor) {
+    const href = (loginAnchor.getAttribute("href") || "login.html").split("?")[0];
+    const at = href.lastIndexOf("login.html");
+    return at >= 0 ? href.slice(0, at) : "";
+}
+
+function ensureAccountLinks() {
+    document.querySelectorAll(".menu-line").forEach(function (line) {
+        const login = Array.prototype.find.call(line.querySelectorAll("a"), function (anchor) {
+            return fileFromHref(anchor.getAttribute("href")) === "login.html";
+        });
+        if (!login) {
+            return;
+        }
+        const prefix = accountPrefix(login);
+        if (!line.querySelector("a[href$='register.html']")) {
+            const register = document.createElement("a");
+            register.href = prefix + "register.html";
+            register.textContent = "Register";
+            login.before(register, document.createTextNode(" "));
+        }
+        if (currentSession && currentSession.admin && !line.querySelector("a[href$='admin.html']")) {
+            const admin = document.createElement("a");
+            admin.href = prefix + "admin.html";
+            admin.textContent = "Admin";
+            login.before(admin, document.createTextNode(" "));
+        }
+    });
+}
+
 function updateMenu() {
+    ensureAccountLinks();
     const level = currentSession && currentSession.rank ? rankLevel(currentSession.rank) : 0;
     document.querySelectorAll("a[href]").forEach(function (anchor) {
         const href = anchor.getAttribute("href");

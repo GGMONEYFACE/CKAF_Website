@@ -83,7 +83,10 @@ PUBLIC_HTML = {
     "locations.html",
     "verses.html",
     "login.html",
+    "register.html",
 }
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -317,7 +320,33 @@ def onesteps_for(page, level):
     return stripped
 
 
+def instructor_gate(session, relative_path):
+    if session:
+        message = "This page is for instructors."
+        link = "Switch account"
+    else:
+        message = "This page is for instructors. Sign in to continue."
+        link = "Sign in"
+    href = login_href(relative_path)
+    return (
+        '<div class="access-gate"><h2>Instructors only</h2><p>'
+        + html.escape(message)
+        + '</p><a class="gate-link" href="'
+        + html.escape(href, quote=True)
+        + '">'
+        + html.escape(link)
+        + "</a></div>"
+    )
+
+
 def prepare_html(relative_path, page, session):
+    if relative_path.rsplit("/", 1)[-1] == "admin.html":
+        if session and session.get("admin"):
+            return page, 200
+        gated = replace_main_content(page, instructor_gate(session, relative_path))
+        if gated is None:
+            return None, 403
+        return gated, 403
     need = required_level(relative_path)
     level = rank_level(session["rank"]) if session and session.get("rank") else 0
     if relative_path.rsplit("/", 1)[-1] == "one-steps.html" and level >= need:
@@ -433,7 +462,7 @@ def parse_cookies(header):
     return found
 
 
-def supabase_call(method, path, body=None, token=None):
+def supabase_call(method, path, body=None, token=None, extra_headers=None):
     base, key = supabase_settings()
     if not base:
         return 0, {}
@@ -444,6 +473,8 @@ def supabase_call(method, path, body=None, token=None):
     request.add_header("Content-Type", "application/json")
     if token:
         request.add_header("Authorization", "Bearer " + token)
+    for name, value in (extra_headers or {}).items():
+        request.add_header(name, value)
     try:
         with urllib.request.urlopen(request, timeout=15) as response:
             raw = response.read()
@@ -474,29 +505,49 @@ def user_from_token_payload(payload):
     return {"id": user_id, "email": email}
 
 
-def fetch_profile(access_token, user):
+def empty_profile(user):
+    fallback = user["email"].split("@")[0] if user["email"] else "Member"
+    return {"displayName": fallback[:80], "rank": None, "admin": False}
+
+
+def profile_from_row(row, user):
+    profile = empty_profile(user)
+    name = row.get("display_name") if isinstance(row, dict) else None
+    if isinstance(name, str) and name.strip():
+        profile["displayName"] = name.strip()[:80]
+    rank = row.get("rank") if isinstance(row, dict) else None
+    profile["rank"] = rank if rank in RANKS else None
+    profile["admin"] = isinstance(row, dict) and row.get("is_admin") is True
+    return profile
+
+
+def read_profile(access_token, user):
     global PROFILE_WARNED
     status, payload = supabase_call(
         "GET",
-        "/rest/v1/profiles?id=eq." + user["id"] + "&select=display_name,rank",
+        "/rest/v1/profiles?id=eq." + user["id"] + "&select=display_name,rank,is_admin",
         token=access_token,
     )
-    fallback = user["email"].split("@")[0] if user["email"] else "Member"
     if status != 200 or not isinstance(payload, list):
         if not PROFILE_WARNED:
             PROFILE_WARNED = True
             print("Could not read member profiles. Run supabase/schema.sql in the Supabase SQL editor.", file=sys.stderr)
-        return {"displayName": fallback[:80], "rank": None}
-    if not payload:
-        return {"displayName": fallback[:80], "rank": None}
-    row = payload[0] if isinstance(payload[0], dict) else {}
-    name = row.get("display_name")
-    if not isinstance(name, str) or not name.strip():
-        name = fallback
-    rank = row.get("rank")
-    if rank not in RANKS:
-        rank = None
-    return {"displayName": name.strip()[:80], "rank": rank}
+        return empty_profile(user)
+    if not payload or not isinstance(payload[0], dict):
+        return empty_profile(user)
+    return profile_from_row(payload[0], user)
+
+
+def fetch_profile(access_token, user):
+    profile = read_profile(access_token, user)
+    if profile.get("admin"):
+        return profile
+    status, payload = supabase_call("POST", "/rest/v1/rpc/claim_instructor", {}, token=access_token)
+    if status == 200 and payload is True:
+        claimed = read_profile(access_token, user)
+        if claimed.get("admin"):
+            return claimed
+    return profile
 
 
 def authorize(cookie_header, headers):
@@ -505,26 +556,26 @@ def authorize(cookie_header, headers):
     refresh = cookies.get(REFRESH_COOKIE) or ""
     remember = cookies.get(REMEMBER_COOKIE) == "1"
     if not configured() or (not access and not refresh):
-        return None, []
+        return None, [], ""
     if access:
         status, payload = supabase_call("GET", "/auth/v1/user", token=access)
         if status == 0:
-            return None, []
+            return None, [], ""
         user = user_from_token_payload(payload) if status == 200 else None
         if user:
-            return fetch_profile(access, user), []
+            return fetch_profile(access, user), [], access
     if not refresh:
-        return None, []
+        return None, [], ""
     status, payload = supabase_call(
         "POST",
         "/auth/v1/token?grant_type=refresh_token",
         {"refresh_token": refresh},
     )
     if status == 0:
-        return None, []
+        return None, [], ""
     user = user_from_token_payload(payload)
     if status != 200 or not user or "access_token" not in payload or "refresh_token" not in payload:
-        return None, auth_cookies("", "", 0, False, headers, clear=True)
+        return None, auth_cookies("", "", 0, False, headers, clear=True), ""
     profile = fetch_profile(payload["access_token"], user)
     return profile, auth_cookies(
         payload["access_token"],
@@ -532,7 +583,7 @@ def authorize(cookie_header, headers):
         payload.get("expires_in") or 3600,
         remember,
         headers,
-    )
+    ), payload["access_token"]
 
 
 def attempt_wait(ip):
@@ -645,10 +696,159 @@ def handle_logout(headers):
 
 
 def handle_me(headers):
-    profile, cookies = authorize(headers.get("Cookie"), headers)
+    profile, cookies, _token = authorize(headers.get("Cookie"), headers)
     if not profile:
         return json_result(401, {"message": "Sign in."}, cookies)
-    return json_result(200, {"displayName": profile["displayName"], "rank": profile["rank"]}, cookies)
+    return json_result(200, {
+        "displayName": profile["displayName"],
+        "rank": profile["rank"],
+        "isAdmin": profile.get("admin") is True,
+    }, cookies)
+
+
+def clean_name(value):
+    if not isinstance(value, str):
+        return ""
+    cleaned = "".join(ch for ch in value if ch >= " " and ch != "\x7f")
+    return " ".join(cleaned.split())[:80]
+
+
+def read_json(raw, headers):
+    ctype = headers.get("Content-Type") or ""
+    if raw is None or "application/json" not in ctype:
+        return None
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def signup_message(status, payload):
+    text = ""
+    if isinstance(payload, dict):
+        text = " ".join(
+            str(payload.get(key) or "")
+            for key in ("msg", "message", "error_description", "error", "error_code")
+        ).lower()
+    if "already" in text or "registered" in text or "exists" in text:
+        return "That email is already registered. Sign in instead."
+    if "password" in text:
+        return "Use a password of at least 8 characters."
+    if status == 0:
+        return "Registration is unavailable right now."
+    return "Registration was rejected. Check the name, email, and password."
+
+
+def handle_register(headers, raw, ip):
+    wait = attempt_wait(ip)
+    if wait > 0:
+        return json_result(429, {"message": "Too many attempts. Try again in " + str(wait) + " seconds."})
+    data = read_json(raw, headers)
+    if data is None:
+        return json_result(400, {"message": "Registration was rejected."})
+    name = clean_name(data.get("name"))
+    email = data.get("email")
+    password = data.get("password")
+    if not isinstance(email, str) or not isinstance(password, str):
+        record_failure(ip)
+        return json_result(400, {"message": "Enter your name, email, and a password of at least 8 characters."})
+    email = email.strip().lower()
+    if not name or not EMAIL_RE.match(email) or len(email) > 254 or len(password) < 8 or len(password) > 72:
+        record_failure(ip)
+        return json_result(400, {"message": "Enter your name, email, and a password of at least 8 characters."})
+    if not configured():
+        return json_result(503, {"message": "Registration is unavailable right now."})
+    record_failure(ip)
+    status, payload = supabase_call(
+        "POST",
+        "/auth/v1/signup",
+        {"email": email, "password": password, "data": {"display_name": name}},
+    )
+    if status == 0:
+        return json_result(503, {"message": "Registration is unavailable right now."})
+    if not isinstance(payload, dict):
+        return json_result(400, {"message": signup_message(status, payload)})
+    identities = payload.get("identities")
+    if isinstance(identities, list) and not identities:
+        return json_result(200, {
+            "pending": True,
+            "message": "If that email is new, check your inbox for a confirmation link. Then sign in.",
+        })
+    access = payload.get("access_token")
+    refresh = payload.get("refresh_token")
+    if status == 200 and isinstance(access, str) and isinstance(refresh, str) and access and refresh:
+        clear_failures(ip)
+        cookies = auth_cookies(access, refresh, payload.get("expires_in") or 3600, False, headers)
+        return json_result(200, {"redirect": "index.html"}, cookies)
+    if status == 200 and (payload.get("id") or (isinstance(payload.get("user"), dict) and payload["user"].get("id"))):
+        return json_result(200, {
+            "pending": True,
+            "message": "Check your email for a confirmation link, then sign in.",
+        })
+    return json_result(400, {"message": signup_message(status, payload)})
+
+
+def require_admin(headers):
+    profile, cookies, token = authorize(headers.get("Cookie"), headers)
+    if not profile or not profile.get("admin") or not token:
+        return None, cookies, ""
+    return profile, cookies, token
+
+
+def handle_admin_members(headers):
+    _profile, cookies, token = require_admin(headers)
+    if not token:
+        return json_result(403, {"message": "Instructors only."}, cookies)
+    status, payload = supabase_call(
+        "GET",
+        "/rest/v1/profiles?select=id,display_name,email,rank,is_admin&order=display_name.asc",
+        token=token,
+    )
+    if status != 200 or not isinstance(payload, list):
+        return json_result(503, {"message": "The member list is unavailable."}, cookies)
+    members = []
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        user_id = row.get("id")
+        rank = row.get("rank")
+        if not isinstance(user_id, str) or not UUID_RE.match(user_id) or rank not in RANKS:
+            continue
+        name = row.get("display_name") if isinstance(row.get("display_name"), str) else "Member"
+        email = row.get("email") if isinstance(row.get("email"), str) else ""
+        members.append({
+            "id": user_id.lower(),
+            "displayName": name.strip()[:80] or "Member",
+            "email": email[:254],
+            "rank": rank,
+            "admin": row.get("is_admin") is True,
+        })
+    return json_result(200, {"members": members}, cookies)
+
+
+def handle_admin_rank(headers, raw):
+    _profile, cookies, token = require_admin(headers)
+    if not token:
+        return json_result(403, {"message": "Instructors only."}, cookies)
+    data = read_json(raw, headers)
+    if data is None:
+        return json_result(400, {"message": "Choose a member and a belt."}, cookies)
+    user_id = data.get("id")
+    rank = data.get("rank")
+    if not isinstance(user_id, str) or not UUID_RE.match(user_id) or rank not in RANKS:
+        return json_result(400, {"message": "Choose a member and a belt."}, cookies)
+    status, payload = supabase_call(
+        "PATCH",
+        "/rest/v1/profiles?id=eq." + user_id.lower(),
+        {"rank": rank},
+        token=token,
+        extra_headers={"Prefer": "return=representation"},
+    )
+    saved = isinstance(payload, list) and payload and isinstance(payload[0], dict) and payload[0].get("rank") == rank
+    if status != 200 or not saved:
+        return json_result(403, {"message": "That belt was not saved."}, cookies)
+    return json_result(200, {"ok": True, "rank": rank}, cookies)
 
 
 def handle_page(path, headers):
@@ -661,7 +861,7 @@ def handle_page(path, headers):
     cookies = []
     status = 200
     if file_path.suffix.lower() == ".html":
-        session, cookies = authorize(headers.get("Cookie"), headers)
+        session, cookies, _token = authorize(headers.get("Cookie"), headers)
         page, status = prepare_html(relative, body.decode("utf-8"), session)
         if page is None:
             return 403, "text/plain; charset=utf-8", b"That page is not available.\n", cookies
@@ -672,17 +872,23 @@ def handle_page(path, headers):
 def handle_request(method, path, headers, body, ip):
     try:
         if method == "POST":
-            if path not in ("/api/login", "/api/logout"):
+            if path not in ("/api/login", "/api/logout", "/api/register", "/api/admin/rank"):
                 return json_result(404, {"message": "Not found."})
             if not same_origin(headers):
-                return json_result(403, {"message": "Sign-in was rejected."})
+                return json_result(403, {"message": "That request was rejected."})
             if path == "/api/login":
                 return handle_login(headers, body, ip)
+            if path == "/api/register":
+                return handle_register(headers, body, ip)
+            if path == "/api/admin/rank":
+                return handle_admin_rank(headers, body)
             return handle_logout(headers)
         if method != "GET":
             return json_result(405, {"message": "Not found."})
         if path == "/api/me":
             return handle_me(headers)
+        if path == "/api/admin/members":
+            return handle_admin_members(headers)
         if path.startswith("/api/") or path == "/protected" or path.startswith("/protected/"):
             return json_result(404, {"message": "Not found."})
         return handle_page(path, headers)
