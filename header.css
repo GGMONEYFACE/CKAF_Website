@@ -24,7 +24,7 @@ header::before {
     display: block;
     width: 100%;
     aspect-ratio: 948 / 283;
-    background: url('images/IMG_9138.jpg') center / cover no-repeat;
+    background: url('images/banner.jpg') center / cover no-repeat;
 }
 
 header h1 {
