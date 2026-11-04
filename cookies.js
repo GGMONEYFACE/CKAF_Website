@@ -98,7 +98,48 @@ function fileFromHref(href) {
     return file || "";
 }
 
-async function readSession() {
+function readCookie(name) {
+    const prefix = name + "=";
+    const parts = document.cookie ? document.cookie.split("; ") : [];
+    for (let i = 0; i < parts.length; i++) {
+        if (parts[i].indexOf(prefix) === 0) {
+            try {
+                return decodeURIComponent(parts[i].slice(prefix.length));
+            } catch (error) {
+                return "";
+            }
+        }
+    }
+    return "";
+}
+
+function sessionFromToken(token) {
+    const parts = typeof token === "string" ? token.split(".") : [];
+    if (parts.length !== 3 || !parts[1]) {
+        return null;
+    }
+    try {
+        const padded = parts[1].replace(/-/g, "+").replace(/_/g, "/") + "===".slice((parts[1].length + 3) % 4);
+        const data = JSON.parse(atob(padded));
+        if (!data || typeof data.name !== "string" || typeof data.exp !== "number" || data.exp * 1000 <= Date.now()) {
+            return null;
+        }
+        return {
+            displayName: data.name,
+            rank: typeof data.rank === "string" ? data.rank : null,
+            admin: data.admin === true,
+            iat: typeof data.iat === "number" ? data.iat : 0
+        };
+    } catch (error) {
+        return null;
+    }
+}
+
+function readSession() {
+    return sessionFromToken(readCookie("ckaf_session"));
+}
+
+async function refreshSession() {
     try {
         const response = await fetch("/api/me", { credentials: "same-origin" });
         if (!response.ok) {
@@ -111,7 +152,8 @@ async function readSession() {
         return {
             displayName: data.displayName,
             rank: typeof data.rank === "string" ? data.rank : null,
-            admin: data.isAdmin === true
+            admin: data.isAdmin === true,
+            iat: Math.floor(Date.now() / 1000)
         };
     } catch (error) {
         return null;
@@ -281,12 +323,31 @@ function protectPage() {
     gateSections();
 }
 
-async function initPage() {
-    currentSession = await readSession();
+function sameMember(left, right) {
+    if (!left || !right) {
+        return false;
+    }
+    return left.displayName === right.displayName && left.rank === right.rank && left.admin === right.admin;
+}
+
+function initPage() {
+    currentSession = readSession();
     ensureGreeting();
     renderGreeting();
     updateMenu();
     protectPage();
+    const age = currentSession ? Math.floor(Date.now() / 1000) - currentSession.iat : 0;
+    if (!currentSession || age < 300) {
+        return;
+    }
+    refreshSession().then(function (fresh) {
+        if (!fresh || sameMember(currentSession, fresh)) {
+            return;
+        }
+        currentSession = fresh;
+        renderGreeting();
+        updateMenu();
+    });
 }
 
 function onReady(callback) {
@@ -298,5 +359,6 @@ function onReady(callback) {
 }
 
 if (typeof document !== "undefined") {
+    window.ckafReadSession = readSession;
     onReady(initPage);
 }

@@ -57,6 +57,13 @@ async function loadAccount() {
     }
 }
 
+if (form && typeof window.ckafReadSession === "function") {
+    const cached = window.ckafReadSession();
+    if (cached) {
+        showMember(cached);
+    }
+}
+
 if (form) {
     form.addEventListener("submit", async function (event) {
         event.preventDefault();
@@ -87,5 +94,7 @@ if (form) {
         }
         button.disabled = false;
     });
-    loadAccount();
+    if (!nameInput.value) {
+        loadAccount();
+    }
 }

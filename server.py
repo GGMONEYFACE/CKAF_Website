@@ -1,9 +1,13 @@
 # CKAF member site.
-# Supabase checks the password. The browser keeps two HttpOnly cookies.
+# Supabase checks the password. The browser keeps those tokens in HttpOnly cookies.
+# A signed session token, readable by the page, carries the name, belt, and instructor flag.
 # Member pages are read from protected/ and sent only when the rank is high enough.
 # Local: python server.py
 # Vercel: proxy.py handles the same requests.
 
+import base64
+import hashlib
+import hmac
 import html
 import json
 import os
@@ -106,7 +110,9 @@ CONTENT_TYPES = {
 ACCESS_COOKIE = "ckaf_access"
 REFRESH_COOKIE = "ckaf_refresh"
 REMEMBER_COOKIE = "ckaf_remember"
+SESSION_COOKIE = "ckaf_session"
 REMEMBER_SECONDS = 60 * 60 * 24 * 7
+SESSION_SECONDS = 60 * 60 * 12
 MAX_ATTEMPTS = 8
 ATTEMPT_WINDOW = 600
 UUID_RE = re.compile(
@@ -447,8 +453,10 @@ def cookies_are_secure(headers):
     return proto.split(",")[0].strip().lower() == "https"
 
 
-def one_cookie(name, value, max_age, secure):
-    parts = [name + "=" + urllib.parse.quote(value, safe=""), "Path=/", "HttpOnly", "SameSite=Lax"]
+def one_cookie(name, value, max_age, secure, http_only=True):
+    parts = [name + "=" + urllib.parse.quote(value, safe=""), "Path=/", "SameSite=Lax"]
+    if http_only:
+        parts.append("HttpOnly")
     if secure:
         parts.append("Secure")
     if max_age is not None:
@@ -456,16 +464,132 @@ def one_cookie(name, value, max_age, secure):
     return "; ".join(parts)
 
 
-def auth_cookies(access, refresh, expires_in, remember, headers, clear=False):
+def jwt_secret():
+    secret = os.environ.get("CKAF_JWT_SECRET", "").strip()
+    if len(secret) < 32:
+        return b""
+    return secret.encode("utf-8")
+
+
+def b64url_encode(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def b64url_decode(text):
+    return base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+
+
+def sign_session(profile, ttl):
+    secret = jwt_secret()
+    user_id = profile.get("id") if isinstance(profile, dict) else None
+    rank = profile.get("rank") if isinstance(profile, dict) else None
+    name = profile.get("displayName") if isinstance(profile, dict) else None
+    if not secret or not isinstance(user_id, str) or not UUID_RE.match(user_id):
+        return ""
+    if rank not in RANKS or not isinstance(name, str) or not name.strip():
+        return ""
+    now = int(time.time())
+    header = b64url_encode(b'{"alg":"HS256","typ":"JWT"}')
+    body = {
+        "sub": user_id.lower(),
+        "name": name.strip()[:80],
+        "rank": rank,
+        "admin": profile.get("admin") is True,
+        "iat": now,
+        "exp": now + int(ttl),
+    }
+    payload = b64url_encode(json.dumps(body, separators=(",", ":")).encode("utf-8"))
+    signing = header + "." + payload
+    signature = b64url_encode(hmac.new(secret, signing.encode("ascii"), hashlib.sha256).digest())
+    return signing + "." + signature
+
+
+def read_session_token(token):
+    secret = jwt_secret()
+    if not secret or not isinstance(token, str):
+        return None
+    parts = token.split(".")
+    if len(parts) != 3 or any(not part for part in parts):
+        return None
+    try:
+        expected = hmac.new(secret, (parts[0] + "." + parts[1]).encode("ascii"), hashlib.sha256).digest()
+        actual = b64url_decode(parts[2])
+        payload = json.loads(b64url_decode(parts[1]).decode("utf-8"))
+    except (ValueError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not hmac.compare_digest(expected, actual) or not isinstance(payload, dict):
+        return None
+    exp = payload.get("exp")
+    user_id = payload.get("sub")
+    name = payload.get("name")
+    rank = payload.get("rank")
+    if isinstance(exp, float) and exp.is_integer():
+        exp = int(exp)
+    if not isinstance(exp, int) or exp < time.time():
+        return None
+    if not isinstance(user_id, str) or not UUID_RE.match(user_id):
+        return None
+    if not isinstance(name, str) or not name.strip() or rank not in RANKS:
+        return None
+    issued = payload.get("iat")
+    if isinstance(issued, float) and issued.is_integer():
+        issued = int(issued)
+    return {
+        "id": user_id.lower(),
+        "displayName": name.strip()[:80],
+        "rank": rank,
+        "admin": payload.get("admin") is True,
+        "iat": issued if isinstance(issued, int) else 0,
+    }
+
+
+def jwt_payload_unverified(token):
+    if not isinstance(token, str):
+        return None
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        payload = json.loads(b64url_decode(parts[1]).decode("utf-8"))
+    except (ValueError, UnicodeError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def access_expired(token):
+    payload = jwt_payload_unverified(token)
+    exp = payload.get("exp") if isinstance(payload, dict) else None
+    if isinstance(exp, float) and exp.is_integer():
+        exp = int(exp)
+    if not isinstance(exp, int):
+        return True
+    return exp < time.time() + 30
+
+
+def auth_cookies(access, refresh, expires_in, remember, headers, clear=False, profile=None):
     secure = cookies_are_secure(headers)
     refresh_age = 0 if clear else (REMEMBER_SECONDS if remember else None)
     access_age = 0 if clear else (int(expires_in or 3600) if remember else None)
     remember_age = 0 if clear else refresh_age
+    ttl = REMEMBER_SECONDS if remember else SESSION_SECONDS
+    session = "" if clear or not profile else sign_session(profile, ttl)
+    session_age = 0 if clear or not session else (ttl if remember else None)
     return [
         one_cookie(ACCESS_COOKIE, "" if clear else access, access_age, secure),
         one_cookie(REFRESH_COOKIE, "" if clear else refresh, refresh_age, secure),
         one_cookie(REMEMBER_COOKIE, "" if clear else ("1" if remember else "0"), remember_age, secure),
+        one_cookie(SESSION_COOKIE, session, session_age, secure, http_only=False),
     ]
+
+
+def with_id(profile, user_id):
+    profile = dict(profile)
+    profile["id"] = user_id
+    return profile
+
+
+def session_cookies(headers, access, refresh, expires_in, remember, profile):
+    return auth_cookies(access, refresh, expires_in, remember, headers, profile=profile)
 
 
 def parse_cookies(header):
@@ -575,20 +699,24 @@ def fetch_profile(access_token, user):
     return profile
 
 
-def authorize(cookie_header, headers):
+def authorize(cookie_header, headers, fresh=False):
     cookies = parse_cookies(cookie_header)
     access = cookies.get(ACCESS_COOKIE) or ""
     refresh = cookies.get(REFRESH_COOKIE) or ""
     remember = cookies.get(REMEMBER_COOKIE) == "1"
     if not configured() or (not access and not refresh):
         return None, [], ""
-    if access:
+    session = read_session_token(cookies.get(SESSION_COOKIE))
+    if session and access and not fresh and not access_expired(access):
+        return session, [], access
+    if access and not access_expired(access):
         status, payload = supabase_call("GET", "/auth/v1/user", token=access)
         if status == 0:
             return None, [], ""
         user = user_from_token_payload(payload) if status == 200 else None
         if user:
-            return fetch_profile(access, user), [], access
+            profile = with_id(fetch_profile(access, user), user["id"])
+            return profile, session_cookies(headers, access, refresh, 3600, remember, profile), access
     if not refresh:
         return None, [], ""
     status, payload = supabase_call(
@@ -601,14 +729,16 @@ def authorize(cookie_header, headers):
     user = user_from_token_payload(payload)
     if status != 200 or not user or "access_token" not in payload or "refresh_token" not in payload:
         return None, auth_cookies("", "", 0, False, headers, clear=True), ""
-    profile = fetch_profile(payload["access_token"], user)
-    return profile, auth_cookies(
-        payload["access_token"],
+    access = payload["access_token"]
+    profile = with_id(fetch_profile(access, user), user["id"])
+    return profile, session_cookies(
+        headers,
+        access,
         payload["refresh_token"],
         payload.get("expires_in") or 3600,
         remember,
-        headers,
-    ), payload["access_token"]
+        profile,
+    ), access
 
 
 def attempt_wait(ip):
@@ -702,12 +832,15 @@ def handle_login(headers, raw, ip):
         record_failure(ip)
         return json_result(401, {"message": login_failure_message(payload)})
     clear_failures(ip)
-    cookies = auth_cookies(
-        payload["access_token"],
+    access = payload["access_token"]
+    profile = with_id(fetch_profile(access, user), user["id"])
+    cookies = session_cookies(
+        headers,
+        access,
         payload["refresh_token"],
         payload.get("expires_in") or 3600,
         remember,
-        headers,
+        profile,
     )
     return json_result(200, {"redirect": destination}, cookies)
 
@@ -721,7 +854,7 @@ def handle_logout(headers):
 
 
 def handle_me(headers):
-    profile, cookies, _token = authorize(headers.get("Cookie"), headers)
+    profile, cookies, _token = authorize(headers.get("Cookie"), headers, fresh=True)
     if not profile:
         return json_result(401, {"message": "Sign in."}, cookies)
     return json_result(200, {
@@ -804,7 +937,9 @@ def handle_register(headers, raw, ip):
     refresh = payload.get("refresh_token")
     if status == 200 and isinstance(access, str) and isinstance(refresh, str) and access and refresh:
         clear_failures(ip)
-        cookies = auth_cookies(access, refresh, payload.get("expires_in") or 3600, False, headers)
+        user = user_from_token_payload(payload)
+        profile = with_id(fetch_profile(access, user), user["id"]) if user else None
+        cookies = session_cookies(headers, access, refresh, payload.get("expires_in") or 3600, False, profile)
         return json_result(200, {"redirect": "index.html"}, cookies)
     if status == 200 and (payload.get("id") or (isinstance(payload.get("user"), dict) and payload["user"].get("id"))):
         return json_result(200, {
@@ -880,6 +1015,18 @@ def handle_admin_rank(headers, raw):
     )
     if status != 200 or not saved:
         return json_result(403, {"message": "That member was not saved."}, cookies)
+    if _profile.get("id") and user_id.lower() == _profile["id"]:
+        stored = parse_cookies(headers.get("Cookie"))
+        _profile["displayName"] = name
+        _profile["rank"] = rank
+        cookies = session_cookies(
+            headers,
+            token,
+            stored.get(REFRESH_COOKIE) or "",
+            3600,
+            stored.get(REMEMBER_COOKIE) == "1",
+            _profile,
+        )
     return json_result(200, {"ok": True, "rank": rank, "displayName": name}, cookies)
 
 
@@ -899,8 +1046,19 @@ def handle_account_name(headers, raw):
         {"new_name": name},
         token=token,
     )
-    if status != 200 or payload != name:
+    saved = payload.strip() if isinstance(payload, str) else ""
+    if status != 200 or saved != name:
         return json_result(403, {"message": "That name was not saved."}, cookies)
+    profile["displayName"] = name
+    stored = parse_cookies(headers.get("Cookie"))
+    cookies = session_cookies(
+        headers,
+        token,
+        stored.get(REFRESH_COOKIE) or "",
+        3600,
+        stored.get(REMEMBER_COOKIE) == "1",
+        profile,
+    )
     return json_result(200, {"ok": True, "displayName": name}, cookies)
 
 
