@@ -339,11 +339,29 @@ def instructor_gate(session, relative_path):
     )
 
 
+def member_gate(relative_path):
+    href = login_href(relative_path)
+    return (
+        '<div class="access-gate"><h2>Members only</h2><p>Sign in to see your member page.</p>'
+        '<a class="gate-link" href="'
+        + html.escape(href, quote=True)
+        + '">Sign in</a></div>'
+    )
+
+
 def prepare_html(relative_path, page, session):
-    if relative_path.rsplit("/", 1)[-1] == "admin.html":
+    name = relative_path.rsplit("/", 1)[-1]
+    if name == "admin.html":
         if session and session.get("admin"):
             return page, 200
         gated = replace_main_content(page, instructor_gate(session, relative_path))
+        if gated is None:
+            return None, 403
+        return gated, 403
+    if name == "account.html":
+        if session:
+            return page, 200
+        gated = replace_main_content(page, member_gate(relative_path))
         if gated is None:
             return None, 403
         return gated, 403
@@ -510,6 +528,10 @@ def empty_profile(user):
     return {"displayName": fallback[:80], "rank": None, "admin": False}
 
 
+def flag_true(value):
+    return value is True or (isinstance(value, str) and value.lower() in ("true", "t"))
+
+
 def profile_from_row(row, user):
     profile = empty_profile(user)
     name = row.get("display_name") if isinstance(row, dict) else None
@@ -517,25 +539,26 @@ def profile_from_row(row, user):
         profile["displayName"] = name.strip()[:80]
     rank = row.get("rank") if isinstance(row, dict) else None
     profile["rank"] = rank if rank in RANKS else None
-    profile["admin"] = isinstance(row, dict) and row.get("is_admin") is True
+    profile["admin"] = isinstance(row, dict) and flag_true(row.get("is_admin"))
     return profile
 
 
 def read_profile(access_token, user):
     global PROFILE_WARNED
-    status, payload = supabase_call(
-        "GET",
-        "/rest/v1/profiles?id=eq." + user["id"] + "&select=display_name,rank,is_admin",
-        token=access_token,
-    )
-    if status != 200 or not isinstance(payload, list):
-        if not PROFILE_WARNED:
-            PROFILE_WARNED = True
-            print("Could not read member profiles. Run supabase/schema.sql in the Supabase SQL editor.", file=sys.stderr)
-        return empty_profile(user)
-    if not payload or not isinstance(payload[0], dict):
-        return empty_profile(user)
-    return profile_from_row(payload[0], user)
+    for columns in ("display_name,rank,is_admin", "display_name,rank"):
+        status, payload = supabase_call(
+            "GET",
+            "/rest/v1/profiles?id=eq." + user["id"] + "&select=" + columns,
+            token=access_token,
+        )
+        if status == 200 and isinstance(payload, list):
+            if not payload or not isinstance(payload[0], dict):
+                return empty_profile(user)
+            return profile_from_row(payload[0], user)
+    if not PROFILE_WARNED:
+        PROFILE_WARNED = True
+        print("Could not read member profiles. Run supabase/schema.sql in the Supabase SQL editor.", file=sys.stderr)
+    return empty_profile(user)
 
 
 def fetch_profile(access_token, user):
@@ -545,8 +568,10 @@ def fetch_profile(access_token, user):
     status, payload = supabase_call("POST", "/rest/v1/rpc/claim_instructor", {}, token=access_token)
     if status == 200 and payload is True:
         claimed = read_profile(access_token, user)
-        if claimed.get("admin"):
+        claimed["admin"] = True
+        if claimed.get("displayName"):
             return claimed
+        profile["admin"] = True
     return profile
 
 
@@ -822,7 +847,7 @@ def handle_admin_members(headers):
             "displayName": name.strip()[:80] or "Member",
             "email": email[:254],
             "rank": rank,
-            "admin": row.get("is_admin") is True,
+            "admin": flag_true(row.get("is_admin")),
         })
     return json_result(200, {"members": members}, cookies)
 
@@ -836,19 +861,47 @@ def handle_admin_rank(headers, raw):
         return json_result(400, {"message": "Choose a member and a belt."}, cookies)
     user_id = data.get("id")
     rank = data.get("rank")
-    if not isinstance(user_id, str) or not UUID_RE.match(user_id) or rank not in RANKS:
-        return json_result(400, {"message": "Choose a member and a belt."}, cookies)
+    name = clean_name(data.get("name")) if "name" in data else ""
+    if not isinstance(user_id, str) or not UUID_RE.match(user_id) or rank not in RANKS or not name:
+        return json_result(400, {"message": "Enter the member's name and choose a belt."}, cookies)
     status, payload = supabase_call(
         "PATCH",
         "/rest/v1/profiles?id=eq." + user_id.lower(),
-        {"rank": rank},
+        {"rank": rank, "display_name": name},
         token=token,
         extra_headers={"Prefer": "return=representation"},
     )
-    saved = isinstance(payload, list) and payload and isinstance(payload[0], dict) and payload[0].get("rank") == rank
+    saved = (
+        isinstance(payload, list)
+        and payload
+        and isinstance(payload[0], dict)
+        and payload[0].get("rank") == rank
+        and payload[0].get("display_name") == name
+    )
     if status != 200 or not saved:
-        return json_result(403, {"message": "That belt was not saved."}, cookies)
-    return json_result(200, {"ok": True, "rank": rank}, cookies)
+        return json_result(403, {"message": "That member was not saved."}, cookies)
+    return json_result(200, {"ok": True, "rank": rank, "displayName": name}, cookies)
+
+
+def handle_account_name(headers, raw):
+    profile, cookies, token = authorize(headers.get("Cookie"), headers)
+    if not profile or not token:
+        return json_result(401, {"message": "Sign in."}, cookies)
+    data = read_json(raw, headers)
+    if data is None:
+        return json_result(400, {"message": "Enter your name."}, cookies)
+    name = clean_name(data.get("name"))
+    if not name:
+        return json_result(400, {"message": "Enter your name."}, cookies)
+    status, payload = supabase_call(
+        "POST",
+        "/rest/v1/rpc/set_my_name",
+        {"new_name": name},
+        token=token,
+    )
+    if status != 200 or payload != name:
+        return json_result(403, {"message": "That name was not saved."}, cookies)
+    return json_result(200, {"ok": True, "displayName": name}, cookies)
 
 
 def handle_page(path, headers):
@@ -872,7 +925,7 @@ def handle_page(path, headers):
 def handle_request(method, path, headers, body, ip):
     try:
         if method == "POST":
-            if path not in ("/api/login", "/api/logout", "/api/register", "/api/admin/rank"):
+            if path not in ("/api/login", "/api/logout", "/api/register", "/api/admin/rank", "/api/account/name"):
                 return json_result(404, {"message": "Not found."})
             if not same_origin(headers):
                 return json_result(403, {"message": "That request was rejected."})
@@ -882,6 +935,8 @@ def handle_request(method, path, headers, body, ip):
                 return handle_register(headers, body, ip)
             if path == "/api/admin/rank":
                 return handle_admin_rank(headers, body)
+            if path == "/api/account/name":
+                return handle_account_name(headers, body)
             return handle_logout(headers)
         if method != "GET":
             return json_result(405, {"message": "Not found."})

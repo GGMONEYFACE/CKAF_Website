@@ -229,6 +229,12 @@ function ensureAccountLinks() {
             register.textContent = "Register";
             login.before(register, document.createTextNode(" "));
         }
+        if (currentSession && !line.querySelector("a[href$='account.html']")) {
+            const account = document.createElement("a");
+            account.href = prefix + "account.html";
+            account.textContent = "Account";
+            login.before(account, document.createTextNode(" "));
+        }
         if (currentSession && currentSession.admin && !line.querySelector("a[href$='admin.html']")) {
             const admin = document.createElement("a");
             admin.href = prefix + "admin.html";

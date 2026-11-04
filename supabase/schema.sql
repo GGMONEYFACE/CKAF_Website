@@ -134,6 +134,31 @@ $$;
 revoke all on function public.claim_instructor() from public, anon;
 grant execute on function public.claim_instructor() to authenticated;
 
+grant update (display_name) on table public.profiles to authenticated;
+
+create or replace function public.set_my_name(new_name text)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    caller uuid := auth.uid();
+    cleaned text := left(btrim(coalesce(new_name, '')), 80);
+begin
+    if caller is null or cleaned = '' then
+        return null;
+    end if;
+    update public.profiles
+    set display_name = cleaned
+    where id = caller;
+    return cleaned;
+end;
+$$;
+
+revoke all on function public.set_my_name(text) from public, anon;
+grant execute on function public.set_my_name(text) to authenticated;
+
 insert into public.profiles (id, display_name, email, rank)
 select id, left(split_part(email, '@', 1), 80), left(email, 254), 'white'
 from auth.users

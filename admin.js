@@ -42,7 +42,12 @@ function beltSelect(selected) {
 function addMemberRow(member) {
     const row = document.createElement("tr");
     const nameCell = document.createElement("td");
-    nameCell.textContent = member.displayName || "Member";
+    const nameInput = document.createElement("input");
+    nameInput.type = "text";
+    nameInput.maxLength = 80;
+    nameInput.value = member.displayName || "";
+    nameInput.setAttribute("aria-label", "Name");
+    nameCell.append(nameInput);
     if (member.admin) {
         const badge = document.createElement("span");
         badge.className = "admin-badge";
@@ -60,21 +65,21 @@ function addMemberRow(member) {
     button.className = "login-button admin-save";
     button.textContent = "Save";
     button.addEventListener("click", function () {
-        saveRank(member.id, select.value, button);
+        saveRank(member.id, nameInput.value, select.value, button);
     });
     actionCell.append(button);
     row.append(nameCell, emailCell, beltCell, actionCell);
     tableBody.append(row);
 }
 
-async function saveRank(id, rank, button) {
+async function saveRank(id, name, rank, button) {
     button.disabled = true;
     try {
         const response = await fetch("/api/admin/rank", {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: id, rank: rank })
+            body: JSON.stringify({ id: id, name: name, rank: rank })
         });
         let result = {};
         try {
@@ -87,7 +92,7 @@ async function saveRank(id, rank, button) {
             button.disabled = false;
             return;
         }
-        showAdminMessage("Belt saved.", true);
+        showAdminMessage("Saved " + (result.displayName || name) + ".", true);
     } catch (error) {
         showAdminMessage("The member list is unavailable. Reload the page and try again.");
     }

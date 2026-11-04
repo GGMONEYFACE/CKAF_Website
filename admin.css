@@ -25,6 +25,7 @@
     color: #333;
 }
 
+#member-table input[type="text"],
 #member-table select {
     width: 100%;
     min-width: 140px;
