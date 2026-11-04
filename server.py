@@ -82,6 +82,21 @@ PAGE_LEVEL = {
     "one-steps.html": 1,
 }
 
+# Current belt -> the testing page that lists the next test.
+NEXT_TEST_FILE = {
+    "white": "Testing/white-belts.html",
+    "10th": "Testing/10th-gold.html",
+    "9th": "Testing/9th-purple.html",
+    "8th": "Testing/8th-orange.html",
+    "7th": "Testing/7th-blue.html",
+    "6th": "Testing/6th-green.html",
+    "5th": "Testing/5th-green.html",
+    "4th": "Testing/4th-brown.html",
+    "3rd": "Testing/3rd-brown.html",
+    "2nd": "Testing/2nd-red.html",
+    "1st": "Testing/1st-red.html",
+}
+
 PUBLIC_HTML = {
     "index.html",
     "locations.html",
@@ -198,6 +213,30 @@ def load_env_and_check_files():
     high = strip_onesteps(steps, rank_level("black"))
     if 'data-min-rank="1st"' not in high or 'class="note"' not in high:
         raise SystemExit("One-steps sections for a black belt were removed. Refusing to start.")
+    account = (ROOT / "protected" / "account.html").read_text(encoding="utf-8")
+
+    def next_test_text(page):
+        start = page.find('<section id="next-test">')
+        end = page.find("</section>", start)
+        if start < 0 or end < 0:
+            return ""
+        return page[start:end]
+
+    white_page, white_code = prepare_html("account.html", account, {"displayName": "Member", "rank": "white", "admin": False})
+    white_test = next_test_text(white_page or "")
+    if white_code != 200 or "10th Gold Belt Testing Requirements" not in white_test or "Bassai" in white_test:
+        raise SystemExit("Account page would show the wrong belt test. Refusing to start.")
+    red_page, red_code = prepare_html("account.html", account, {"displayName": "Member", "rank": "1st", "admin": False})
+    red_test = next_test_text(red_page or "")
+    if red_code != 200 or "1st Black Belt Testing Requirements" not in red_test or "10th Gold" in red_test:
+        raise SystemExit("A red belt account would show the wrong test. Refusing to start.")
+    black_page, black_code = prepare_html("account.html", account, {"displayName": "Member", "rank": "black", "admin": False})
+    black_test = next_test_text(black_page or "")
+    if black_code != 200 or "Bassai" in black_test or "Testing Requirements" in black_test:
+        raise SystemExit("A black belt account would show another test. Refusing to start.")
+    guest_page, guest_code = prepare_html("account.html", account, None)
+    if guest_code != 403 or guest_page is None or "Testing Requirements" in guest_page:
+        raise SystemExit("Account tests would be visible without signing in. Refusing to start.")
 
 
 def find_div_open(text, start):
@@ -355,6 +394,28 @@ def member_gate(relative_path):
     )
 
 
+def next_test_section(rank):
+    if rank == "black":
+        return (
+            '<section id="next-test">'
+            '<h3 class="section-heading">Next test</h3>'
+            "<p>You have reached black belt. There is no further test on this site.</p>"
+            "</section>"
+        )
+    relative = NEXT_TEST_FILE.get(rank)
+    found = page_file(relative) if relative else None
+    if found is None:
+        return ""
+    text = found.read_text(encoding="utf-8")
+    heading_at = text.find("Testing Requirements")
+    start = text.rfind("<h3", 0, heading_at) if heading_at >= 0 else -1
+    end = text.find("</div>", heading_at) if heading_at >= 0 else -1
+    if start < 0 or end < 0:
+        return ""
+    body = text[start:end].replace('href="../', 'href="')
+    return '<section id="next-test">' + body + "</section>"
+
+
 def prepare_html(relative_path, page, session):
     name = relative_path.rsplit("/", 1)[-1]
     if name == "admin.html":
@@ -366,7 +427,8 @@ def prepare_html(relative_path, page, session):
         return gated, 403
     if name == "account.html":
         if session:
-            return page, 200
+            filled = page.replace('<div id="next-test"></div>', next_test_section(session.get("rank")))
+            return filled, 200
         gated = replace_main_content(page, member_gate(relative_path))
         if gated is None:
             return None, 403
