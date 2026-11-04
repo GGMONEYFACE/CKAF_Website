@@ -25,6 +25,12 @@
     color: #333;
 }
 
+#member-table input[type="checkbox"] {
+    width: 1.15rem;
+    height: 1.15rem;
+    cursor: pointer;
+}
+
 #member-table input[type="text"],
 #member-table select {
     width: 100%;
@@ -40,17 +46,6 @@
     width: auto;
     padding: 8px 16px;
     font-size: 0.95rem;
-}
-
-.admin-badge {
-    display: inline-block;
-    margin-left: 6px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    background: #111;
-    color: #fff;
-    font-size: 0.75rem;
-    vertical-align: middle;
 }
 
 .login-error.success {

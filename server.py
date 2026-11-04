@@ -55,6 +55,8 @@ RANK_LABEL = {
 }
 
 # Basename -> minimum rank level. Keep this in step with cookies.js.
+# Kata opens three belts before the rank that must know it, so a student
+# can read the form for the next test and the two forms after that.
 # one-steps.html is also trimmed by section inside the page.
 PAGE_LEVEL = {
     "white-belts.html": 1,
@@ -68,17 +70,17 @@ PAGE_LEVEL = {
     "3rd-brown.html": 9,
     "2nd-red.html": 10,
     "1st-red.html": 11,
-    "giecho-il-bu.html": 2,
-    "giecho-yi-bu.html": 3,
-    "giecho-sahm-bu.html": 4,
-    "pyong-an-cho-dan.html": 5,
-    "pyong-an-yi-dan.html": 6,
-    "pyong-an-sahm-dan.html": 7,
-    "pyong-an-sa-dan.html": 8,
-    "nahanchi-sahm-dan.html": 9,
-    "pyong-an-oh-dan.html": 10,
-    "empi.html": 11,
-    "bassai.html": 12,
+    "giecho-il-bu.html": 1,
+    "giecho-yi-bu.html": 1,
+    "giecho-sahm-bu.html": 1,
+    "pyong-an-cho-dan.html": 2,
+    "pyong-an-yi-dan.html": 3,
+    "pyong-an-sahm-dan.html": 4,
+    "pyong-an-sa-dan.html": 5,
+    "nahanchi-sahm-dan.html": 6,
+    "pyong-an-oh-dan.html": 7,
+    "empi.html": 8,
+    "bassai.html": 9,
     "one-steps.html": 1,
 }
 
@@ -237,6 +239,39 @@ def load_env_and_check_files():
     guest_page, guest_code = prepare_html("account.html", account, None)
     if guest_code != 403 or guest_page is None or "Testing Requirements" in guest_page:
         raise SystemExit("Account tests would be visible without signing in. Refusing to start.")
+    check_form_window()
+
+
+def form_visible(page, code):
+    return code == 200 and page is not None and "steps-list" in page and "access-gate" not in page
+
+
+def form_hidden(page, code):
+    return code == 403 and page is not None and "steps-list" not in page and "access-gate" in page
+
+
+def check_form_window():
+    # A belt sees the form required at the next test, plus the two after it.
+    white = {"displayName": "Member", "rank": "white", "admin": False}
+    gold = {"displayName": "Member", "rank": "10th", "admin": False}
+    brown = {"displayName": "Member", "rank": "4th", "admin": False}
+    third = {"displayName": "Member", "rank": "3rd", "admin": False}
+    samples = (
+        ("Kata/giecho-sahm-bu.html", white, True),
+        ("Kata/pyong-an-cho-dan.html", white, False),
+        ("Kata/pyong-an-cho-dan.html", gold, True),
+        ("Kata/pyong-an-yi-dan.html", gold, False),
+        ("Kata/bassai.html", brown, False),
+        ("Kata/bassai.html", third, True),
+        ("Kata/giecho-il-bu.html", None, False),
+    )
+    for relative, session, opened in samples:
+        text = (ROOT / "protected" / relative).read_text(encoding="utf-8")
+        page, code = prepare_html(relative, text, session)
+        if opened and not form_visible(page, code):
+            raise SystemExit("A belt cannot see the forms for the next three tests. Refusing to start.")
+        if not opened and not form_hidden(page, code):
+            raise SystemExit("A form would be visible more than two tests ahead. Refusing to start.")
 
 
 def find_div_open(text, start):
@@ -1059,29 +1094,33 @@ def handle_admin_rank(headers, raw):
     user_id = data.get("id")
     rank = data.get("rank")
     name = clean_name(data.get("name")) if "name" in data else ""
+    instructor = data.get("admin") if isinstance(data, dict) else None
     if not isinstance(user_id, str) or not UUID_RE.match(user_id) or rank not in RANKS or not name:
         return json_result(400, {"message": "Enter the member's name and choose a belt."}, cookies)
-    status, payload = supabase_call(
-        "PATCH",
-        "/rest/v1/profiles?id=eq." + user_id.lower(),
-        {"rank": rank, "display_name": name},
-        token=token,
-        extra_headers={"Prefer": "return=representation"},
-    )
-    saved = (
-        isinstance(payload, list)
-        and payload
-        and isinstance(payload[0], dict)
-        and payload[0].get("rank") == rank
-        and payload[0].get("display_name") == name
-    )
-    if status != 200 or not saved:
-        return json_result(403, {"message": "That member was not saved."}, cookies)
-    if _profile.get("id") and user_id.lower() == _profile["id"]:
+    if not isinstance(instructor, bool):
+        return json_result(400, {"message": "Choose whether this member is an instructor."}, cookies)
+    path = "/rest/v1/profiles?id=eq." + user_id.lower()
+    prefer = {"Prefer": "return=representation"}
+
+    def row_saved(payload, expect_admin):
+        if not (isinstance(payload, list) and payload and isinstance(payload[0], dict)):
+            return False
+        row = payload[0]
+        if row.get("rank") != rank or row.get("display_name") != name:
+            return False
+        if expect_admin is None:
+            return True
+        return flag_true(row.get("is_admin")) is expect_admin
+
+    def cookies_for_self(include_admin):
+        if not (_profile.get("id") and user_id.lower() == _profile["id"]):
+            return cookies
         stored = parse_cookies(headers.get("Cookie"))
         _profile["displayName"] = name
         _profile["rank"] = rank
-        cookies = session_cookies(
+        if include_admin:
+            _profile["admin"] = instructor
+        return session_cookies(
             headers,
             token,
             stored.get(REFRESH_COOKIE) or "",
@@ -1089,7 +1128,37 @@ def handle_admin_rank(headers, raw):
             stored.get(REMEMBER_COOKIE) == "1",
             _profile,
         )
-    return json_result(200, {"ok": True, "rank": rank, "displayName": name}, cookies)
+
+    status, payload = supabase_call(
+        "PATCH",
+        path,
+        {"rank": rank, "display_name": name, "is_admin": instructor},
+        token=token,
+        extra_headers=prefer,
+    )
+    if status == 200 and row_saved(payload, instructor):
+        return json_result(
+            200,
+            {"ok": True, "rank": rank, "displayName": name, "admin": instructor},
+            cookies_for_self(True),
+        )
+    detail = payload.get("message") if isinstance(payload, dict) else ""
+    denied = isinstance(detail, str) and ("is_admin" in detail or "permission" in detail.lower())
+    if denied:
+        status, payload = supabase_call(
+            "PATCH",
+            path,
+            {"rank": rank, "display_name": name},
+            token=token,
+            extra_headers=prefer,
+        )
+        if status == 200 and row_saved(payload, None):
+            return json_result(
+                403,
+                {"message": "The name and belt were saved. Instructor status was not. Run the latest supabase/schema.sql in the Supabase SQL editor."},
+                cookies_for_self(False),
+            )
+    return json_result(403, {"message": "That member was not saved."}, cookies)
 
 
 def handle_account_name(headers, raw):

@@ -48,38 +48,38 @@ function addMemberRow(member) {
     nameInput.value = member.displayName || "";
     nameInput.setAttribute("aria-label", "Name");
     nameCell.append(nameInput);
-    if (member.admin) {
-        const badge = document.createElement("span");
-        badge.className = "admin-badge";
-        badge.textContent = "Instructor";
-        nameCell.append(document.createTextNode(" "), badge);
-    }
     const emailCell = document.createElement("td");
     emailCell.textContent = member.email || "";
     const beltCell = document.createElement("td");
     const select = beltSelect(member.rank);
     beltCell.append(select);
+    const instructorCell = document.createElement("td");
+    const instructor = document.createElement("input");
+    instructor.type = "checkbox";
+    instructor.checked = member.admin === true;
+    instructor.setAttribute("aria-label", "Instructor for " + (member.displayName || member.email || "member"));
+    instructorCell.append(instructor);
     const actionCell = document.createElement("td");
     const button = document.createElement("button");
     button.type = "button";
     button.className = "login-button admin-save";
     button.textContent = "Save";
     button.addEventListener("click", function () {
-        saveRank(member.id, nameInput.value, select.value, button);
+        saveRank(member.id, nameInput.value, select.value, instructor.checked, button);
     });
     actionCell.append(button);
-    row.append(nameCell, emailCell, beltCell, actionCell);
+    row.append(nameCell, emailCell, beltCell, instructorCell, actionCell);
     tableBody.append(row);
 }
 
-async function saveRank(id, name, rank, button) {
+async function saveRank(id, name, rank, instructor, button) {
     button.disabled = true;
     try {
         const response = await fetch("/api/admin/rank", {
             method: "POST",
             credentials: "same-origin",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: id, name: name, rank: rank })
+            body: JSON.stringify({ id: id, name: name, rank: rank, admin: instructor })
         });
         let result = {};
         try {

@@ -1,5 +1,6 @@
 // Member greeting and menu locks. The server decides which pages are sent.
 // Rank numbers here match server.py and only affect labels and locked links.
+// Kata levels match server.py: each belt can open its next test form and the two after it.
 
 const RANKS = {
     white: { level: 1, label: "White Belt" },
@@ -28,17 +29,17 @@ const PAGE_LEVEL = {
     "3rd-brown.html": 9,
     "2nd-red.html": 10,
     "1st-red.html": 11,
-    "giecho-il-bu.html": 2,
-    "giecho-yi-bu.html": 3,
-    "giecho-sahm-bu.html": 4,
-    "pyong-an-cho-dan.html": 5,
-    "pyong-an-yi-dan.html": 6,
-    "pyong-an-sahm-dan.html": 7,
-    "pyong-an-sa-dan.html": 8,
-    "nahanchi-sahm-dan.html": 9,
-    "pyong-an-oh-dan.html": 10,
-    "empi.html": 11,
-    "bassai.html": 12,
+    "giecho-il-bu.html": 1,
+    "giecho-yi-bu.html": 1,
+    "giecho-sahm-bu.html": 1,
+    "pyong-an-cho-dan.html": 2,
+    "pyong-an-yi-dan.html": 3,
+    "pyong-an-sahm-dan.html": 4,
+    "pyong-an-sa-dan.html": 5,
+    "nahanchi-sahm-dan.html": 6,
+    "pyong-an-oh-dan.html": 7,
+    "empi.html": 8,
+    "bassai.html": 9,
     "one-steps.html": 1
 };
 
@@ -265,12 +266,6 @@ function ensureAccountLinks() {
             return;
         }
         const prefix = accountPrefix(login);
-        if (!line.querySelector("a[href$='register.html']")) {
-            const register = document.createElement("a");
-            register.href = prefix + "register.html";
-            register.textContent = "Register";
-            login.before(register, document.createTextNode(" "));
-        }
         if (currentSession && !line.querySelector("a[href$='account.html']")) {
             const account = document.createElement("a");
             account.href = prefix + "account.html";

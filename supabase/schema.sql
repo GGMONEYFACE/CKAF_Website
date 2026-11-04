@@ -1,6 +1,7 @@
 -- Member accounts. The website uses the anon key.
 -- Rank and instructor access live here, not in user metadata, because members can edit that.
 -- A new account is always white belt. An instructor changes the belt from the admin page.
+-- Instructors can also grant or remove instructor status from that page.
 -- Instructor emails are listed in private.admin_emails. Example:
 --   insert into private.admin_emails (email) values ('instructor@example.com');
 
@@ -137,6 +138,7 @@ revoke all on function public.claim_instructor() from public, anon;
 grant execute on function public.claim_instructor() to authenticated;
 
 grant update (display_name) on table public.profiles to authenticated;
+grant update (is_admin) on table public.profiles to authenticated;
 
 create or replace function public.set_my_name(new_name text)
 returns text
