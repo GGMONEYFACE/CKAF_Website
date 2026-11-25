@@ -62,7 +62,7 @@
     padding: 12px;
     border: 1px solid #ddd;
     border-radius: 4px;
-    font-size: 1rem;
+    font-size: 16px;
     transition: border-color 0.3s ease;
 }
 
@@ -97,7 +97,8 @@
 
 .form-group.checkbox input[type="checkbox"] {
     margin-right: 8px;
-    width: auto;
+    width: 1.25rem;
+    height: 1.25rem;
     cursor: pointer;
 }
 
@@ -236,7 +237,7 @@
 
 @media (max-width: 480px) {
     .login-form {
-        padding: 25px;
+        padding: 20px 16px;
     }
     
     .content h2 {

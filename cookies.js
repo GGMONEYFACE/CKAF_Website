@@ -224,7 +224,10 @@ function renderGreeting() {
         return;
     }
     const label = currentSession.rank ? " (" + rankLabel(currentSession.rank) + ")" : "";
-    greeting.append(document.createTextNode("Hello, " + currentSession.displayName + label + "! "));
+    const name = document.createElement("span");
+    name.className = "greeting-name";
+    name.textContent = "Hello, " + currentSession.displayName + label + "!";
+    greeting.append(name);
     const button = document.createElement("button");
     button.type = "button";
     button.className = "logout-button";

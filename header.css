@@ -5,6 +5,9 @@
 }
 
 html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    overflow-x: hidden;
     overflow-x: clip;
 }
 
@@ -14,13 +17,32 @@ body {
     color: #333;
     margin: 0;
     background: #fff;
+    overflow-wrap: break-word;
+    overflow-x: hidden;
     overflow-x: clip;
+}
+
+img,
+iframe,
+video,
+svg {
+    max-width: 100%;
+}
+
+a,
+button,
+input,
+select,
+textarea,
+label {
+    touch-action: manipulation;
 }
 
 header {
     position: relative;
     width: 100%;
     margin-top: 50px;
+    margin-top: calc(50px + env(safe-area-inset-top, 0px));
     background: #101324;
 }
 
@@ -40,7 +62,9 @@ body::before {
     left: 0;
     width: 100%;
     height: 50px;
+    height: calc(50px + env(safe-area-inset-top, 0px));
     background: #101324;
+    box-shadow: inset 0 -2px 0 #8f4a48;
     pointer-events: none;
 }
 
@@ -59,26 +83,41 @@ header h1 {
 /* Greeting in top left */
 .greeting {
     position: fixed;
-    top: 10px;
-    left: 16px;
+    top: 0;
+    top: env(safe-area-inset-top, 0px);
+    left: 12px;
     z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 50px;
+    max-width: calc(100% - 68px);
     color: white;
-    font-size: 1.1rem;
+    font-size: 1rem;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
     font-weight: 500;
     pointer-events: none;
+    overflow: hidden;
+}
+
+.greeting-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Menu Button */
 #menu-button {
     position: fixed;
-    top: 6px;
+    top: 3px;
+    top: calc(3px + env(safe-area-inset-top, 0px));
     right: 8px;
-    width: 42px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     padding: 0;
-    background: rgba(0, 0, 0, 0.45);
-    border: none;
+    background: rgba(16, 19, 36, 0.45);
+    border: 1px solid rgba(148, 75, 68, 0.9);
     border-radius: 6px;
     cursor: pointer;
     z-index: 1002;
@@ -95,15 +134,15 @@ header h1 {
 }
 
 #menu-button span:nth-child(1) {
-    top: 8px;
+    top: 12px;
 }
 
 #menu-button span:nth-child(2) {
-    top: 16.5px;
+    top: 20.5px;
 }
 
 #menu-button span:nth-child(3) {
-    top: 25px;
+    top: 29px;
 }
 
 #menu-button.open span:nth-child(1) {
@@ -126,12 +165,13 @@ header h1 {
     width: 100%;
     height: 50px;
     background: #101324;
+    box-shadow: inset 0 -2px 0 #8f4a48;
     transform: translateX(100%);
     transition: transform 0.35s ease;
     z-index: 1001;
     padding: 0 56px 0 16px;
-    font-family: monospace;
-    font-size: 14px;
+    font-family: Arial, sans-serif;
+    font-size: 15px;
 }
 
 .sliding-menu.open {
@@ -194,18 +234,29 @@ header h1 {
     position: absolute;
     top: 100%;
     left: 0;
-    background: rgba(0, 0, 0, 0.9);
+    background: #1a1d33;
+    box-shadow: inset 0 -2px 0 #8f4a48;
     min-width: 280px;
     z-index: 1002;
     border-radius: 0 0 6px 6px;
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
     padding: 0;
-    font-family: monospace;
-    font-size: 14px;
+    font-family: Arial, sans-serif;
+    font-size: 15px;
 }
 
-.kata-dropdown:hover .kata-submenu {
+.kata-dropdown.open .kata-submenu {
     display: block;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .kata-dropdown:hover .kata-submenu {
+        display: block;
+    }
+}
+
+.kata-submenu {
+    max-width: min(92vw, 420px);
 }
 
 .kata-submenu a {
@@ -215,7 +266,7 @@ header h1 {
     padding: 8px 16px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.15);
     margin: 0;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .kata-submenu a:last-child {
@@ -227,27 +278,102 @@ header h1 {
     color: #ccc;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 1100px) {
     .sliding-menu {
+        top: 50px;
+        top: calc(50px + env(safe-area-inset-top, 0px));
         height: auto;
-        padding: 12px 56px 12px 12px;
+        max-height: calc(100vh - 50px);
+        max-height: calc(100dvh - 50px - env(safe-area-inset-top, 0px));
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 0 0 12px;
+        -webkit-overflow-scrolling: touch;
     }
 
-    .menu-content {
-        height: auto;
-    }
-
+    .menu-content,
     .menu-line {
         display: flex;
-        flex-wrap: wrap;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+        height: auto;
+        text-align: center;
+    }
+
+    .menu-line > a,
+    .kata-dropdown > a {
+        display: flex;
+        align-items: center;
+        min-height: 44px;
+        margin: 0;
+        padding: 10px 20px;
         justify-content: center;
-        gap: 4px 0;
+        font-size: 1.05rem;
+        border-bottom: 1px solid rgba(148, 75, 68, 0.45);
+    }
+
+    .kata-dropdown {
+        display: block;
+    }
+
+    .kata-dropdown:hover .kata-submenu {
+        display: none;
+    }
+
+    .kata-dropdown.open .kata-submenu {
+        display: block;
+        position: static;
+        min-width: 0;
+        max-width: none;
+        width: 100%;
+        border-radius: 0;
+        box-shadow: none;
+        background: #1a1d33;
+        box-shadow: none;
+    }
+
+    .kata-submenu a {
+        min-height: 44px;
+        padding: 12px 28px;
+        font-size: 1rem;
+    }
+
+    body.menu-open {
+        overflow: hidden;
+    }
+}
+
+@media (max-width: 768px) {
+    body > .content {
+        margin-top: 20px;
+        margin-bottom: 28px;
+        padding-left: 16px;
+        padding-right: 16px;
+    }
+
+    .logout-button {
+        min-height: 36px;
+        font-size: 1rem;
+    }
+}
+
+@media (hover: none) {
+    .location-card:hover,
+    .onestep-card:hover,
+    .verse-card:hover,
+    .verse-btn:hover,
+    .steps-list li:hover,
+    .login-button:hover {
+        transform: none;
     }
 }
 
 .logout-button {
-    margin-left: 8px;
-    padding: 2px 8px;
+    flex: none;
+    margin-left: 0;
+    padding: 4px 10px;
+    pointer-events: auto;
     border: 1px solid rgba(255, 255, 255, 0.85);
     border-radius: 4px;
     background: rgba(0, 0, 0, 0.35);

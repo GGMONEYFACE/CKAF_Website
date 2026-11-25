@@ -25,10 +25,24 @@
     text-align: center;
 }
 
+.content ol {
+    padding-left: 2.4rem;
+    margin-top: 0.4rem;
+}
+
+.content ol li {
+    padding-left: 0.4rem;
+}
+
 /* Responsive design */
 @media (max-width: 768px) {
     .content h2 {
         font-size: 2rem;
+    }
+
+    .content p {
+        text-align: left;
+        text-indent: 0;
     }
 }
 

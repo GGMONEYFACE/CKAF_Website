@@ -51,7 +51,7 @@
 /* Verse Cards */
 .verses-container {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
     gap: 30px;
     margin-top: 40px;
 }
@@ -94,6 +94,12 @@
 
 /* Responsive design */
 @media (max-width: 768px) {
+    .verse-btn {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+    }
+
     .verses-container {
         grid-template-columns: 1fr;
     }
@@ -106,6 +112,10 @@
 @media (max-width: 480px) {
     .content h2 {
         font-size: 1.5rem;
+    }
+
+    .verse-card {
+        padding: 18px;
     }
 }
 
